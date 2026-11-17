@@ -98,7 +98,15 @@ class MainActivity : ComponentActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 VeloxPrefs.ACTION_VPN_RUNTIME -> {
-                    val next = VeloxPrefs.loadRuntime(this@MainActivity)
+                    // v1.7.2: состояние приезжает внутри broadcast — без чтения файла с диска
+                    // на главном потоке (раньше это был I/O на каждый тик при активной загрузке).
+                    val payload = intent.getStringExtra(VeloxPrefs.EXTRA_RUNTIME_JSON)
+                    val next = if (!payload.isNullOrBlank()) {
+                        runCatching { VpnRuntimeState.fromJson(JSONObject(payload)) }
+                            .getOrElse { VeloxPrefs.loadRuntime(this@MainActivity) }
+                    } else {
+                        VeloxPrefs.loadRuntime(this@MainActivity)
+                    }
                     runtimeState = next
                     if (!next.isActiveOrBusy && vpnRefreshDelegated) {
                         vpnRefreshDelegated = false
@@ -420,7 +428,14 @@ class MainActivity : ComponentActivity() {
         }
         refreshEngineSnapshotAsync(reloadDisk = false)
         if (runtimeState.isActiveOrBusy) {
-            VeloxVpnService.startConnect(this, forceRefresh = false)
+            if (runtimeState.phase == VpnPhase.CONNECTED) {
+                // v1.7.2: смена страны при живом туннеле — бесшовный горячий свап (0 разрыва).
+                // Если для новой страны ещё нет проверенных узлов, сервис сам дозаполнит пул в фоне
+                // и переключится, не убивая текущее соединение.
+                VeloxVpnService.requestHotReload(this)
+            } else {
+                VeloxVpnService.startConnect(this, forceRefresh = false)
+            }
         }
     }
 

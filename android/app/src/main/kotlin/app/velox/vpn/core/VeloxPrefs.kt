@@ -20,6 +20,9 @@ object VeloxPrefs {
     const val ACTION_TG_BRIDGE_CHANGED = "app.velox.vpn.action.TG_BRIDGE_CHANGED"
     const val EXTRA_TOAST_MESSAGE = "toast_msg"
 
+    /** v1.7.2: runtime JSON is shipped inside the broadcast so the UI never touches disk. */
+    const val EXTRA_RUNTIME_JSON = "runtime_json"
+
     const val LOCAL_VPN_SOCKS_PORT = 10808
     const val LOCAL_TG_BRIDGE_PORT = 10809
     const val BATCH_PROBE_BASE_PORT = 24200
@@ -196,9 +199,13 @@ object VeloxPrefs {
     @Synchronized
     fun publishRuntime(ctx: Context, state: VpnRuntimeState, broadcast: Boolean = true) {
         val stamped = state.copy(updatedAtMs = System.currentTimeMillis())
-        writeAtomicLocked(lockFile(ctx, "runtime"), runtimeFile(ctx), stamped.toJson().toString())
+        val json = stamped.toJson().toString()
+        writeAtomicLocked(lockFile(ctx, "runtime"), runtimeFile(ctx), json)
         if (broadcast) {
             val intent = Intent(ACTION_VPN_RUNTIME).setPackage(ctx.packageName)
+            // Payload is ~1 KB — Android delivers it asynchronously; the UI parses it in memory
+            // instead of re-reading + re-parsing `vpn_runtime.json` from flash on the main thread.
+            intent.putExtra(EXTRA_RUNTIME_JSON, json)
             runCatching { ctx.sendBroadcast(intent) }
         }
     }
@@ -216,16 +223,32 @@ object VeloxPrefs {
         runCatching { ctx.sendBroadcast(intent) }
     }
 
+    /**
+     * Cross-process advisory lock around `block`.
+     *
+     * v1.7.2 fix: раньше исключение ВНУТРИ `block` перехватывалось и `block` выполнялся повторно,
+     * уже без блокировки (двойная запись/двойное чтение). Теперь различаем «не удалось взять
+     * блокировку» (тогда — однократный проход без неё) и «упало внутри блока» (пробрасываем как есть).
+     */
     private inline fun <T> withCrossProcessLock(lockTarget: File, block: () -> T): T {
-        runCatching {
+        var raf: RandomAccessFile? = null
+        var lock: java.nio.channels.FileLock? = null
+        try {
             lockTarget.parentFile?.mkdirs()
-            RandomAccessFile(lockTarget, "rw").use { raf ->
-                raf.channel.lock().use {
-                    return block()
-                }
-            }
+            raf = RandomAccessFile(lockTarget, "rw")
+            lock = raf.channel.lock()
+        } catch (_: Throwable) {
+            // ФС без поддержки блокировок — работаем без межпроцессного лока (запись атомарна через rename)
+            runCatching { lock?.release() }
+            runCatching { raf?.close() }
+            return block()
         }
-        return block()
+        return try {
+            block()
+        } finally {
+            runCatching { lock?.release() }
+            runCatching { raf?.close() }
+        }
     }
 
     private fun writeAtomicLocked(lockTarget: File, target: File, content: String) {
