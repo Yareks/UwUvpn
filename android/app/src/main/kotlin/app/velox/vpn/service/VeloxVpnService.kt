@@ -75,6 +75,126 @@ class VeloxVpnService : XrayVpnService() {
     private var connectJob: Job? = null
     private var monitorJob: Job? = null
     private var poolRefreshJob: Job? = null
+
+    // -----------------------------------------------------------------------------------------
+    // v1.7.1 ANTI-DROP / ANTI-FLAP GUARD
+    // Whitelist («белые списки РФ») и часть подписочных узлов сознательно блокируют внешние
+    // «эталонные» адреса (gstatic / example.com / 1.1.1.1), при этом сам туннель полностью жив.
+    // Раньше HTTP-проба через SOCKS возвращала «умер» -> мы каждые ~1.5–3 минуты переключали
+    // рабочий сервер (для пользователя это выглядело как регулярный разрыв). Теперь:
+    //   1) L1-проба SOCKS5 CONNECT: туннель считается живым, если ядро принимает соединение;
+    //   2) эскалация только после нескольких независимых подтверждений;
+    //   3) демпфирование флапа — не более 3 автопереключений за 6 минут, затем пауза 3 минуты.
+    // -----------------------------------------------------------------------------------------
+    private val autoPromoteStamps = ArrayDeque<Long>()
+    @Volatile
+    private var resilientUntilMs: Long = 0L
+    @Volatile
+    private var lastL1OkAtMs: Long = 0L
+    @Volatile
+    private var l1RescueLogAtMs: Long = 0L
+
+    /** Активный узел помечен как «белые списки РФ» (эталонные сайты у него закрыты по дизайну). */
+    @Volatile
+    private var activeIsWhitelist: Boolean = false
+
+    private val flapLock = Any()
+
+    /** True — можно выполнять автоматическое переключение по результатам пробы. */
+    private fun canAutoPromote(reason: String): Boolean {
+        val now = System.currentTimeMillis()
+        synchronized(flapLock) {
+            while (autoPromoteStamps.isNotEmpty() && now - autoPromoteStamps.first() > 360_000L) {
+                autoPromoteStamps.removeFirst()
+            }
+        }
+        if (now < resilientUntilMs) {
+            VeloxNative.logInfo(
+                this,
+                "ANTI-FLAP",
+                "«$reason»: узел помечен сомнительным, но удержание стабильности ещё ${(resilientUntilMs - now) / 1000}с — оставляем текущий сервер подключённым"
+            )
+            return false
+        }
+        if (synchronized(flapLock) { autoPromoteStamps.size } >= 3) {
+            resilientUntilMs = now + 180_000L
+            synchronized(flapLock) { autoPromoteStamps.clear() }
+            VeloxNative.logWarn(
+                this,
+                "ANTI-FLAP",
+                "Слишком частые переключения (3 за 6 мин) — пауза 3 мин: держим текущий узел, чтобы не рвать соединения"
+            )
+            return false
+        }
+        return true
+    }
+
+    private fun noteAutoPromote() {
+        synchronized(flapLock) { autoPromoteStamps.addLast(System.currentTimeMillis()) }
+    }
+
+    /**
+     * L1-проба живости туннеля: «сырой» SOCKS5 (RFC 1928 + RFC 1929) CONNECT к внешнему адресу
+     * через локальный вход `127.0.0.1:10808`. Успешный CONNECT = ядро диспетчеризует трафик,
+     * даже если SNI-фильтр «белого списка» режет последующий TLS к gstatic/example.com.
+     */
+    private fun l1TunnelAlive(timeoutMs: Int = 2200): Boolean {
+        val port = VeloxPrefs.LOCAL_VPN_SOCKS_PORT
+        val targets = arrayOf("www.gstatic.com" to 443, "1.1.1.1" to 443, "cp.cloudflare.com" to 443)
+        for ((host, tport) in targets) {
+            val ok = runCatching {
+                java.net.Socket().use { s ->
+                    s.tcpNoDelay = true
+                    s.soTimeout = timeoutMs
+                    s.connect(java.net.InetSocketAddress("127.0.0.1", port), timeoutMs)
+                    val out = s.getOutputStream()
+                    val inp = s.getInputStream()
+
+                    // --- RFC 1928 greeting: VER=5, NMETHODS=2, [NO-AUTH, USER/PASS] ---
+                    out.write(byteArrayOf(0x05, 0x02, 0x00, 0x02))
+                    out.flush()
+                    if (inp.read() != 0x05) return@use false
+                    val method = inp.read()
+                    if (method == 0x02) {
+                        // --- RFC 1929 username/password ---
+                        val u = sessionSocksUser.toByteArray(Charsets.UTF_8)
+                        val p = sessionSocksPass.toByteArray(Charsets.UTF_8)
+                        val auth = ByteArray(3 + u.size + p.size)
+                        auth[0] = 0x01
+                        auth[1] = u.size.toByte()
+                        u.copyInto(auth, 2)
+                        auth[2 + u.size] = p.size.toByte()
+                        p.copyInto(auth, 3 + u.size)
+                        out.write(auth)
+                        out.flush()
+                        if (inp.read() != 0x01 || inp.read() != 0x00) return@use false
+                    } else if (method != 0x00) {
+                        return@use false
+                    }
+
+                    // --- CONNECT domain:port ---
+                    val hb = host.toByteArray(Charsets.UTF_8)
+                    val req = ByteArray(5 + hb.size + 2)
+                    req[0] = 0x05; req[1] = 0x01; req[2] = 0x00; req[3] = 0x03
+                    req[4] = hb.size.toByte()
+                    hb.copyInto(req, 5)
+                    req[5 + hb.size] = ((tport shr 8) and 0xFF).toByte()
+                    req[6 + hb.size] = (tport and 0xFF).toByte()
+                    out.write(req)
+                    out.flush()
+                    if (inp.read() != 0x05) return@use false
+                    // REP = 0x00 (succeeded) — маршрут построен, туннель функционален
+                    inp.read() == 0x00
+                }
+            }.getOrDefault(false)
+            if (ok) {
+                lastL1OkAtMs = System.currentTimeMillis()
+                return true
+            }
+        }
+        return false
+    }
+
     private var networkChangeJob: Job? = null
 
     private val sessionSeq = AtomicInteger(0)
@@ -299,6 +419,12 @@ class VeloxVpnService : XrayVpnService() {
 
     private fun launchConnectFlow(forceRefresh: Boolean, autoHealing: Boolean) {
         val mySeq = sessionSeq.incrementAndGet()
+        if (!autoHealing) {
+            // Ручной коннект = новый отсчёт: снимаем окно удержания и историю автопереключений
+            synchronized(flapLock) { autoPromoteStamps.clear() }
+            resilientUntilMs = 0L
+            activeIsWhitelist = false
+        }
         connectJob?.cancel()
         monitorJob?.cancel()
 
@@ -321,7 +447,7 @@ class VeloxVpnService : XrayVpnService() {
                 VeloxNative.logInfo(
                     this@VeloxVpnService,
                     "VPN",
-                    "=== Старт v1.6: $regionLabel | 2×Резерв=${if (settings.dualChannel) "ВКЛ" else "выкл"} | " +
+                    "=== Старт v1.7.1: $regionLabel | 2×Резерв=${if (settings.dualChannel) "ВКЛ" else "выкл"} | " +
                         "БС=${if (settings.whitelistMode) "ВКЛ" else "выкл"} | YT0%=${if (settings.adblockYoutube) "ВКЛ" else "выкл"} | " +
                         "Фрагм=${if (settings.fragmentTls) "ВКЛ" else "выкл"} | $netDesc ==="
                 )
@@ -673,6 +799,8 @@ class VeloxVpnService : XrayVpnService() {
             "whitelistActive",
             settings.whitelistMode && primary.optBoolean("whitelist_friendly", false)
         )
+        // v1.7.1: запоминаем тип активного узла — от него зависит стратегия проверки живости
+        activeIsWhitelist = wlActive
         val ytMode = buildRes.optString("ytMode", "")
         val ytZeroAds = settings.adblockYoutube && ytMode.contains("0ads")
 
@@ -746,7 +874,10 @@ class VeloxVpnService : XrayVpnService() {
      * 3) If pool has <2 live servers left in that country, triggers silent background replenishment
      *    via protected sockets and hot-mounts the new `vpn_1` automatically once verified!
      */
-    private suspend fun promoteHotStandbySeamlessly(reason: String): Boolean {
+    private suspend fun promoteHotStandbySeamlessly(reason: String, probeDriven: Boolean = false): Boolean {
+        // v1.7.1: автопереключение по «мягким» признакам (HTTP-проба/замирание) не должно
+        // превращаться в карусель серверов — только после подтверждений и вне окна удержания.
+        if (probeDriven && !canAutoPromote(reason)) return false
         if (!hasUnderlyingNetwork()) {
             enterSilentOfflineWait()
             return true
@@ -803,6 +934,7 @@ class VeloxVpnService : XrayVpnService() {
 
             if (swapped.isSuccess) {
                 val next = swapped.getOrThrow()
+                if (probeDriven) noteAutoPromote()
                 VeloxNative.logOk(
                     this,
                     "DUAL",
@@ -1056,11 +1188,11 @@ class VeloxVpnService : XrayVpnService() {
 
             if (silentStandbyMount) {
                 notifyEngineUpdated(null)
-                if (outcome.ok &&
+                val reloadNeeded = outcome.ok &&
                     currentState.phase == VpnPhase.CONNECTED &&
                     !currentState.dualChannelActive &&
                     VeloxPrefs.loadSettings(this@VeloxVpnService).dualChannel
-                ) {
+                if (reloadNeeded) {
                     hotReloadActiveTunnel(reason = "подключён горячий резерв")
                 }
             } else {
@@ -1070,11 +1202,11 @@ class VeloxVpnService : XrayVpnService() {
                     outcome.error.ifBlank { "Новых серверов не найдено" }
                 }
                 notifyEngineUpdated(msg)
-                if (outcome.ok &&
+                val reloadNeeded = outcome.ok &&
                     currentState.phase == VpnPhase.CONNECTED &&
                     !currentState.dualChannelActive &&
                     VeloxPrefs.loadSettings(this@VeloxVpnService).dualChannel
-                ) {
+                if (reloadNeeded) {
                     hotReloadActiveTunnel(reason = "подключён горячий резерв")
                 }
             }
@@ -1187,7 +1319,10 @@ class VeloxVpnService : XrayVpnService() {
                             if (!hasUnderlyingNetwork()) {
                                 enterSilentOfflineWait()
                             } else if (!runSilentHealthUpdate()) {
-                                promoteHotStandbySeamlessly(reason = "замирание основного канала (0 Б ответа)")
+                                promoteHotStandbySeamlessly(
+                                    reason = "замирание основного канала (0 Б ответа)",
+                                    probeDriven = true,
+                                )
                                 prevUp = currentState.uplinkBytes
                                 prevDown = currentState.downlinkBytes
                                 lastDownlinkAtMs = System.currentTimeMillis()
@@ -1212,11 +1347,16 @@ class VeloxVpnService : XrayVpnService() {
                             lastDownlinkAtMs = System.currentTimeMillis()
                         } else {
                             consecutiveHealthFailures++
+                            // v1.7.1: 3 подтверждения подряд (~3×90 с) вместо 2 — даём узлу шанс
+                            // пережить кратковременный ТСПУ-всплеск, деградацию LTE или NAT-паузу.
                             if (VeloxPrefs.loadSettings(this@VeloxVpnService).autoHeal &&
-                                consecutiveHealthFailures >= 2
+                                consecutiveHealthFailures >= 3
                             ) {
                                 consecutiveHealthFailures = 0
-                                promoteHotStandbySeamlessly(reason = "потеря ответа узла (ТСПУ/обрыв)")
+                                promoteHotStandbySeamlessly(
+                                    reason = "потеря ответа узла (ТСПУ/обрыв)",
+                                    probeDriven = true,
+                                )
                             }
                         }
                     }
@@ -1237,15 +1377,33 @@ class VeloxVpnService : XrayVpnService() {
         return Triple(alive, rtt, err)
     }
 
-    private fun runSilentHealthUpdate(): Boolean {
+    private suspend fun runSilentHealthUpdate(): Boolean {
         if (!hasUnderlyingNetwork()) return true // offline is NOT a server fault
         val raw = runCatching {
             VeloxNative.checkTunnelHealth(VeloxPrefs.LOCAL_VPN_SOCKS_PORT)
         }.getOrDefault("{}")
         val obj = runCatching { JSONObject(raw) }.getOrNull() ?: return false
         val alive = obj.optBoolean("alive", obj.optBoolean("ok", false))
-        if (!alive) return false
-
+        if (!alive) {
+            // v1.7.1: HTTP-эталон (gstatic/Cloudflare/1.1.1.1) может быть закрыт самим узлом
+            // («белые списки», подписки с фильтрацией SNI). Проверяем живость на L1 — если ядро
+            // принимает SOCKS5 CONNECT, туннель рабочий и переключать сервер НЕЛЬЗЯ.
+            val l1 = kotlinx.coroutines.withContext(Dispatchers.IO) { l1TunnelAlive() }
+            if (l1) {
+                val now = System.currentTimeMillis()
+                if (now - l1RescueLogAtMs > 120_000L) {
+                    l1RescueLogAtMs = now
+                    VeloxNative.logInfo(
+                        this,
+                        "HEAL",
+                        "Узел ${currentState.activeNodeName} не отвечает на эталонный HTTP-запрос (${obj.optString("error", "-")}), " +
+                            "но L1-туннель жив — оставляем соединение, переключение не требуется"
+                    )
+                }
+                return true
+            }
+            return false
+        }
         val rtt = obj.optInt("rtt_ms", obj.optInt("rttMs", currentState.rttMs))
         val ip = obj.optString("exit_ip", obj.optString("ip", "")).ifBlank { currentState.exitIp }
         val loc = obj.optString("exit_country", obj.optString("loc", "")).ifBlank { currentState.exitCountry }
@@ -1274,7 +1432,7 @@ class VeloxVpnService : XrayVpnService() {
             )
             return
         }
-        promoteHotStandbySeamlessly(reason = reason)
+        promoteHotStandbySeamlessly(reason = reason, probeDriven = true)
     }
 
     override fun onXrayTunnelStarted() {
@@ -1344,11 +1502,35 @@ class VeloxVpnService : XrayVpnService() {
         }
 
         val isOpera = currentState.activeProtocol.contains("Opera", ignoreCase = true)
+
+        // v1.7.1: узел «Белых списков РФ» по определению не открывает example.com/wikipedia/1.1.1.1 —
+        // проверяем только L1-живость. Иначе каждый коннект к WL-узлу вызывал бы ложное
+        // «сайты недоступны» и мгновенный переход (для пользователя — обрыв).
+        if (activeIsWhitelist) {
+            val l1 = kotlinx.coroutines.withContext(Dispatchers.IO) { l1TunnelAlive() }
+            if (l1) {
+                val curId = currentState.activeNodeId
+                if (curId.isNotBlank()) runCatching { VeloxNative.recordNodeSuccess(curId, currentState.rttMs) }
+                VeloxNative.logOk(
+                    this,
+                    "WEB",
+                    "Узел «Белые списки»: L1-туннель живой — эталонные сайты у таких узлов закрыты по дизайну, соединение оставляем"
+                )
+            } else {
+                VeloxNative.logWarn(
+                    this,
+                    "WEB",
+                    "Узел «Белые списки» не отвечает даже на L1 — переключение на резерв"
+                )
+                promoteHotStandbySeamlessly(reason = "WL-узел не отвечает (L1)", probeDriven = true)
+            }
+            return
+        }
+
         val res = runCatching {
             JSONObject(VeloxNative.verifyTunnelWeb(VeloxPrefs.LOCAL_VPN_SOCKS_PORT, isOpera))
         }.getOrDefault(JSONObject())
 
-        val ok = res.optBoolean("ok", false)
         val host = res.optString("host", "example.com")
         val webCode = res.optInt("webCode", -1)
         val dohCode = res.optInt("dohCode", -1)
@@ -1356,6 +1538,10 @@ class VeloxVpnService : XrayVpnService() {
         val loc = res.optString("exitCountry", "").ifBlank { currentState.exitCountry }
         val colo = res.optString("exitColo", "").ifBlank { currentState.exitColo }
         val ip = res.optString("exitIp", "").ifBlank { currentState.exitIp }
+        val ruExit = res.optBoolean("ruExit", false)
+        // Браузерный HTML-ответ — главный критерий; DoH-плечо (1.1.1.1) лишь вспомогательное.
+        val ok = res.optBoolean("ok", false) ||
+            (webCode in 200..399 && !ruExit)
 
         if (ok) {
             VeloxNative.logOk(
@@ -1380,12 +1566,49 @@ class VeloxVpnService : XrayVpnService() {
                 )
             }
         } else if (hasUnderlyingNetwork() && VeloxPrefs.loadSettings(this).autoHeal) {
+            // v1.7.1: один неудачный замер — ещё не повод рвать соединение. Сначала проверяем,
+            // жив ли туннель на L1, затем один контрольный замер через 6 с. Переключаем только при
+            // повторном подтверждении (и только вне окна удержания стабильности).
             VeloxNative.logWarn(
                 this,
                 "WEB",
-                "Узел ограничивает сайты ($host=$webCode, DoH=$dohCode) — мгновенный переход на резерв…"
+                "Сайты не открылись ($host=$webCode, DoH=$dohCode) — контрольная проверка через 6 с…"
             )
-            promoteHotStandbySeamlessly(reason = "сайты недоступны ($webCode/$dohCode)")
+            if (ruExit) {
+                promoteHotStandbySeamlessly(reason = "выход в РФ (RU)", probeDriven = true)
+                return
+            }
+            val l1 = kotlinx.coroutines.withContext(Dispatchers.IO) { l1TunnelAlive() }
+            if (l1) {
+                delay(6000L)
+                if (currentState.phase != VpnPhase.CONNECTED) return
+                val retry = runCatching {
+                    JSONObject(VeloxNative.verifyTunnelWeb(VeloxPrefs.LOCAL_VPN_SOCKS_PORT, isOpera))
+                }.getOrDefault(JSONObject())
+                val retryWeb = retry.optInt("webCode", -1)
+                val retryOk = retry.optBoolean("ok", false) ||
+                    (retryWeb in 200..399 && !retry.optBoolean("ruExit", false))
+                if (retryOk) {
+                    val curId = currentState.activeNodeId
+                    val r2 = retry.optInt("rttMs", 0)
+                    if (curId.isNotBlank()) runCatching { VeloxNative.recordNodeSuccess(curId, r2) }
+                    VeloxNative.logOk(
+                        this,
+                        "WEB",
+                        "Повторная проверка успешна ($host HTTP $retryWeb) — узел стабилен, соединение сохранено"
+                    )
+                    return
+                }
+                VeloxNative.logWarn(
+                    this,
+                    "WEB",
+                    "Узел устойчиво ограничивает сайты ($host HTTP $retryWeb) — бесшовный переход на резерв"
+                )
+                promoteHotStandbySeamlessly(reason = "сайты недоступны ($retryWeb/$dohCode)", probeDriven = true)
+            } else {
+                VeloxNative.logWarn(this, "WEB", "L1-туннель не отвечает — бесшовный переход на резерв")
+                promoteHotStandbySeamlessly(reason = "сайты недоступны + L1 молчит", probeDriven = true)
+            }
         }
     }
 

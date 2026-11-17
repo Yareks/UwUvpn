@@ -14,8 +14,8 @@ android {
         // Supports Android 7.0 (API 24) through Android 16, explicitly optimized for Android 12 (API 31/32)
         minSdk = 24
         targetSdk = 35
-        versionCode = 107
-        versionName = "1.7.0"
+        versionCode = 108
+        versionName = "1.7.1"
 
         ndk {
             // Covers 100% of 64-bit and 32-bit ARM Android smartphones while keeping APK compact
