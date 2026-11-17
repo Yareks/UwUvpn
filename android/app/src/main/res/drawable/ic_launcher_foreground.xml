@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Sleek modern geometric shield with lightning-V bolt -->
+    <path
+        android:pathData="M54,23 L79,33.5 L79,53.5 C79,69.5 68.2,80.6 54,86 C39.8,80.6 29,69.5 29,53.5 L29,33.5 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="32"
+                android:startY="24"
+                android:endX="76"
+                android:endY="85"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FF00F0A8" />
+                <item android:offset="1.0" android:color="#FF00B4D8" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Inner dark shield cutout -->
+    <path
+        android:fillColor="#FF0A1420"
+        android:pathData="M54,28.5 L73.8,37.1 L73.8,53.2 C73.8,66.2 65.1,75.4 54,80.1 C42.9,75.4 34.2,66.2 34.2,53.2 L34.2,37.1 Z" />
+    <!-- Crisp Velox V-Bolt -->
+    <path
+        android:fillColor="#FF00F0A8"
+        android:pathData="M42.5,42 L49.2,42 L54,57.5 L60.5,40 L66.5,40 L56.6,67.5 L51.4,67.5 Z" />
+</vector>

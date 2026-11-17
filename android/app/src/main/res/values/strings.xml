@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VeloxVPN</string>
+    <string name="tile_label">VeloxVPN</string>
+    <string name="notif_channel_vpn">Туннель VeloxVPN</string>
+    <string name="notif_channel_vpn_desc">Состояние защищённого соединения VPN</string>
+    <string name="action_switch_node">Сменить узел</string>
+    <string name="action_disconnect">Отключить</string>
+</resources>

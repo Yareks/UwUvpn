@@ -1,0 +1,53 @@
+[package]
+name = "velox-engine"
+version = "1.3.0"
+edition = "2021"
+description = "Ultra-lightweight Rust VPN orchestrator, anti-DPI fetcher, WARP/Opera provisioner, and authentic Telegram MTProto/SOCKS5/WS engine"
+license = "MPL-2.0"
+
+[lib]
+name = "velox_engine"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "live_verify"
+path = "src/bin/live_verify.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "0.26"
+rustls-pki-types = "1"
+
+# Pure-Rust cryptography for MTProto FakeTLS/obfuscated2, WARP X25519/P-256, Opera Digest Auth
+aes = "0.8"
+ctr = "0.9"
+cipher = "0.4"
+sha2 = "0.10"
+sha1 = "0.10"
+md-5 = "0.10"
+hmac = "0.12"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
+rand = "0.8"
+
+# Serialization, encoding, URL parsing
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+hex = "0.4"
+url = "2.5"
+percent-encoding = "2.3"
+
+# Android JNI bridge
+jni = "0.21"
+once_cell = "1.19"
+libc = "0.2"
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+panic = "unwind"
+strip = "symbols"

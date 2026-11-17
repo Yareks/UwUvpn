@@ -1,0 +1,43 @@
+--- a/crates/xray-transport/src/reality_rustls.rs
++++ b/crates/xray-transport/src/reality_rustls.rs
+@@ -947,12 +947,38 @@
+         dss: &DigitallySignedStruct,
+     ) -> Result<HandshakeSignatureValid, RustlsError> {
+         let provider = crypto::ring::default_provider();
+-        crypto::verify_tls13_signature(
++        match crypto::verify_tls13_signature(
+             message,
+             cert,
+             dss,
+             &provider.signature_verification_algorithms,
+-        )
++        ) {
++            Ok(valid) => Ok(valid),
++            Err(err) => {
++                // sing-box and minimal Xray REALITY servers emit extension-less X.509 v1 Ed25519
++                // leaf certificates after passing REALITY HMAC-SHA512 in verify_server_cert.
++                // Only accept X.509 v1 SPKI when real_certificate fallback was NOT taken, and
++                // still enforce full RFC 8446 §4.4.3 TLS 1.3 CertificateVerify cryptographic check.
++                let is_real_fallback = self
++                    .real_certificate
++                    .as_ref()
++                    .is_some_and(|fb| fb.accepted.load(Ordering::Acquire));
++                if is_real_fallback {
++                    return Err(err);
++                }
++                let (_, parsed) = x509_parser::parse_x509_certificate(cert.as_ref())
++                    .map_err(|_| err.clone())?;
++                let spki_der = rustls::pki_types::SubjectPublicKeyInfoDer::from(
++                    parsed.tbs_certificate.subject_pki.raw,
++                );
++                crypto::verify_tls13_signature_with_raw_key(
++                    message,
++                    &spki_der,
++                    dss,
++                    &provider.signature_verification_algorithms,
++                )
++            }
++        }
+     }
+ 
+     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
