@@ -35,6 +35,7 @@ import app.velox.vpn.core.regionTitleRu
 import app.velox.vpn.ui.MainActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -72,7 +73,20 @@ import kotlin.math.abs
  */
 class VeloxVpnService : XrayVpnService() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /**
+     * v1.7.3: любая необработанная ошибка в фоновой корутине раньше убивала процесс `:vpn`
+     * (для пользователя — мгновенный «краш»). Теперь она логируется, а сервис продолжает жить.
+     */
+    private val crashHandler = CoroutineExceptionHandler { _, e ->
+        runCatching {
+            VeloxNative.logErr(
+                this,
+                "CRASH",
+                "Сбой фоновой задачи (сервис продолжает работу): ${VpnBatchProber.formatThrowable(e)}"
+            )
+        }
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + crashHandler)
     private var connectJob: Job? = null
     private var monitorJob: Job? = null
     private var poolRefreshJob: Job? = null
@@ -346,12 +360,16 @@ class VeloxVpnService : XrayVpnService() {
 
     override fun onCreate() {
         super.onCreate()
-        ensureNotificationChannel()
-        VeloxNative.ensureInitialized(this)
-        VeloxNative.setLocalSocksAuth(VeloxPrefs.LOCAL_VPN_SOCKS_PORT, sessionSocksUser, sessionSocksPass)
-        VeloxPrefs.saveSessionSocksAuth(this, VeloxPrefs.LOCAL_VPN_SOCKS_PORT, sessionSocksUser, sessionSocksPass)
+        // v1.7.3: инициализация сервиса не должна ронять процесс — любая ошибка логируется,
+        // а сервис продолжает жить (пользователь видит понятный статус, а не «краш»).
+        runCatching { ensureNotificationChannel() }
+        runCatching { VeloxNative.ensureInitialized(this) }
+        runCatching {
+            VeloxNative.setLocalSocksAuth(VeloxPrefs.LOCAL_VPN_SOCKS_PORT, sessionSocksUser, sessionSocksPass)
+            VeloxPrefs.saveSessionSocksAuth(this, VeloxPrefs.LOCAL_VPN_SOCKS_PORT, sessionSocksUser, sessionSocksPass)
+        }
         val settings = VeloxPrefs.loadSettings(this)
-        VeloxNative.syncHwidConfig(this, settings.sendHwid)
+        runCatching { VeloxNative.syncHwidConfig(this, settings.sendHwid) }
         val pm = getSystemService(PowerManager::class.java)
         isScreenInteractive = pm?.isInteractive != false
         if (!isScreenInteractive) {
@@ -363,6 +381,16 @@ class VeloxVpnService : XrayVpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action ?: ACTION_CONNECT
+        return runCatching { handleStartCommand(action, intent) }
+            .getOrElse { t ->
+                runCatching {
+                    VeloxNative.logErr(this, "CRASH", "Сбой обработки команды $action: ${VpnBatchProber.formatThrowable(t)}")
+                }
+                START_STICKY
+            }
+    }
+
+    private fun handleStartCommand(action: String, intent: Intent?): Int {
         when (action) {
             ACTION_DISCONNECT -> {
                 VeloxNative.logInfo(this, "VPN", "Остановка по запросу пользователя")
@@ -465,7 +493,7 @@ class VeloxVpnService : XrayVpnService() {
                 VeloxNative.logInfo(
                     this@VeloxVpnService,
                     "VPN",
-                    "=== Старт v1.7.2: $regionLabel | 2×Резерв=${if (settings.dualChannel) "ВКЛ" else "выкл"} | " +
+                    "=== Старт v1.7.3: $regionLabel | 2×Резерв=${if (settings.dualChannel) "ВКЛ" else "выкл"} | " +
                         "БС=${if (settings.whitelistMode) "ВКЛ" else "выкл"} | YT0%=${if (settings.adblockYoutube) "ВКЛ" else "выкл"} | " +
                         "Фрагм=${if (settings.fragmentTls) "ВКЛ" else "выкл"} | $netDesc ==="
                 )
@@ -1019,10 +1047,12 @@ class VeloxVpnService : XrayVpnService() {
                         refreshPoolInBackground(silentStandbyMount = false)
                     } else {
                         scope.launch {
-                            delay(9000L)
-                            if (pendingHotSwap && poolRefreshJob?.isActive != true) {
-                                if (!applyPendingHotSwapIfReady()) {
-                                    refreshPoolInBackground(silentStandbyMount = false)
+                            runCatching {
+                                delay(9000L)
+                                if (pendingHotSwap && poolRefreshJob?.isActive != true) {
+                                    if (!applyPendingHotSwapIfReady()) {
+                                        refreshPoolInBackground(silentStandbyMount = false)
+                                    }
                                 }
                             }
                         }
@@ -1095,7 +1125,9 @@ class VeloxVpnService : XrayVpnService() {
         val outcome = VpnBatchProber.refreshPoolBlocking(
             context = this,
             settings = settings,
-            vpnService = null,
+            // v1.7.3: при ЖИВОМ туннеле проверочные сокеты обязаны идти мимо TUN — иначе
+            // они попадают в собственный VPN, и живые узлы ошибочно помечаются мёртвыми.
+            vpnService = if (currentState.phase == VpnPhase.CONNECTED) this else null,
             maxBatch = maxBatch,
             shouldAbort = isAborted,
             onProgress = { upd ->
@@ -1301,13 +1333,15 @@ class VeloxVpnService : XrayVpnService() {
             // v1.7.2: единичная пост-проверка идёт В ОТДЕЛЬНОЙ корутине, чтобы даже худший
             // сценарий (узел с фильтрацией SNI + 15-секундные таймауты) не замораживал тики монитора.
             scope.launch {
-                delay(1800L)
-                if (isActive && sessionSeq.get() == mySeq &&
-                    currentState.phase == VpnPhase.CONNECTED &&
-                    !waitingForPhysicalNet && hasUnderlyingNetwork()
-                ) {
-                    verifyRealAndroidBrowserTunPath()
-                    lastDownlinkAtMs = System.currentTimeMillis()
+                runCatching {
+                    delay(1800L)
+                    if (isActive && sessionSeq.get() == mySeq &&
+                        currentState.phase == VpnPhase.CONNECTED &&
+                        !waitingForPhysicalNet && hasUnderlyingNetwork()
+                    ) {
+                        verifyRealAndroidBrowserTunPath()
+                        lastDownlinkAtMs = System.currentTimeMillis()
+                    }
                 }
             }
 
@@ -1555,6 +1589,14 @@ class VeloxVpnService : XrayVpnService() {
                         )
                     }
                 }
+            } catch (t: Throwable) {
+                runCatching {
+                    VeloxNative.logWarn(
+                        this@VeloxVpnService,
+                        "HEAL",
+                        "Проверка «$reason» прервана: ${VpnBatchProber.formatThrowable(t).take(160)}"
+                    )
+                }
             } finally {
                 probeBusy.set(false)
             }
@@ -1789,20 +1831,26 @@ class VeloxVpnService : XrayVpnService() {
     }
 
     private fun buildTunJson(settings: AppSettings, idlePowerSave: Boolean): String {
-        return VeloxNative.buildTunConfig(
-            targetRegion = settings.region,
-            pinnedNodeId = settings.pinnedNodeId,
-            whitelistMode = settings.whitelistMode,
-            bypassRu = settings.bypassRu,
-            fragmentTls = settings.fragmentTls,
-            adblock = settings.adblockYoutube,
-            localSocksPort = VeloxPrefs.LOCAL_VPN_SOCKS_PORT,
-            dualChannel = settings.dualChannel,
-            idlePowerSave = idlePowerSave,
-            socksUser = sessionSocksUser,
-            socksPass = sessionSocksPass,
-            customRulesJson = settings.customRulesJson(),
-        )
+        val raw = runCatching {
+            VeloxNative.buildTunConfig(
+                targetRegion = settings.region,
+                pinnedNodeId = settings.pinnedNodeId,
+                whitelistMode = settings.whitelistMode,
+                bypassRu = settings.bypassRu,
+                fragmentTls = settings.fragmentTls,
+                adblock = settings.adblockYoutube,
+                localSocksPort = VeloxPrefs.LOCAL_VPN_SOCKS_PORT,
+                dualChannel = settings.dualChannel,
+                idlePowerSave = idlePowerSave,
+                socksUser = sessionSocksUser,
+                socksPass = sessionSocksPass,
+                customRulesJson = settings.customRulesJson(),
+            )
+        }.getOrNull().orEmpty().trim()
+        // v1.7.3: ядро может не вернуть план (сбой JNI/OOM) — вместо падения JSONObject(null)
+        // отдаём корректный «нет плана», и вызывающий код штатно уходит на подбор узлов.
+        return if (raw.startsWith("{") && raw.endsWith("}")) raw
+        else """{"ok":false,"error":"native returned no plan"}"""
     }
 
     private fun mapRuntimeProfile(mode: RuntimeProfileMode): XrayTunRuntimeProfile = when (mode) {

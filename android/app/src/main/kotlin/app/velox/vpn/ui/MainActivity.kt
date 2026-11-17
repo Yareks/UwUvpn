@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import app.velox.vpn.core.AppSettings
+import app.velox.vpn.core.CrashGuard
 import app.velox.vpn.core.EngineSnapshot
 import app.velox.vpn.core.InstalledAppInfo
 import app.velox.vpn.core.LiveProgressUpdate
@@ -72,6 +73,8 @@ class MainActivity : ComponentActivity() {
     private var isCheckingServices by mutableStateOf(false)
     private var pendingForceRefresh = false
     private var lastHandledDeepLink: String = ""
+    private var crashReportText: String = ""
+    private var safeMode: Boolean = false
 
     private val snackbarHost = SnackbarHostState()
     private var receiverRegistered = false
@@ -137,15 +140,32 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
 
+        // v1.7.3: если прошлый запуск завершился сбоем — сначала читаем отчёт (чистый Kotlin,
+        // без нативного ядра) и включаем «безопасный режим»: тяжёлая инициализация и фоновая
+        // синхронизация пропускаются, чтобы приложение гарантированно открылось и отчёт можно
+        // было посмотреть и отправить.
+        crashReportText = runCatching { CrashGuard.consumeReport(this) }.getOrDefault("")
+        safeMode = crashReportText.isNotBlank()
+        if (safeMode) {
+            CrashGuard.appendPlainLog(this, "--- safe mode after crash ---\n" + crashReportText.take(6000))
+            runCatching { VeloxNative.logErr(this, "CRASH", "Прошлый запуск завершился сбоем (безопасный режим):\n" + crashReportText.take(6000)) }
+        }
+
         settingsState = VeloxPrefs.loadSettings(this)
         runtimeState = VeloxPrefs.loadRuntime(this)
         updateBatteryFlag()
         registerBusReceiver()
-        refreshEngineSnapshotAsync(reloadDisk = false, syncHwid = true)
+        refreshEngineSnapshotAsync(reloadDisk = false, syncHwid = !safeMode)
 
         val consumedDeepLink = handleIncomingDeepLink(intent)
-        if (!consumedDeepLink) {
+        if (!consumedDeepLink && !safeMode) {
             triggerStartupSmartDeltaSync()
+        }
+        if (safeMode) {
+            lifecycleScope.launch {
+                delay(1200L)
+                showSnack("Прошлый запуск завершился сбоем — включён безопасный режим, отчёт сохранён в журнале")
+            }
         }
 
         setContent {

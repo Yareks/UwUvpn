@@ -16,6 +16,7 @@ import app.velox.vpn.VeloxApp
 import app.velox.vpn.core.VeloxNative
 import app.velox.vpn.core.VeloxPrefs
 import app.velox.vpn.ui.MainActivity
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -52,7 +53,10 @@ class TgBridgeService : Service() {
         }
     }
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val crashHandler = CoroutineExceptionHandler { _, e ->
+        runCatching { VeloxNative.logErr(this, "TG", "Сбой фоновой задачи прокси (сервис продолжает работу): ${e.message}") }
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + crashHandler)
     private var keeperJob: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null

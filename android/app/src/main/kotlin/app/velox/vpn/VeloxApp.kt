@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.ComponentCallbacks2
 import android.os.Build
 import app.velox.vpn.core.AppIconCache
+import app.velox.vpn.core.CrashGuard
 import app.velox.vpn.core.VeloxNative
 
 class VeloxApp : Application() {
@@ -19,6 +20,9 @@ class VeloxApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // v1.7.3: перехватчик фатальных сбоев ставится ПЕРВЫМ — он пишет стектрейс в файл,
+        // чтобы любой краш (в т.ч. при запуске) можно было увидеть и починить.
+        CrashGuard.install(this)
         // Zero eager native-library or thread-pool load here: Quick Settings Tile binds stay
         // <1 MB pure Kotlin, while MainActivity & :vpn initialize Rust lazily off the UI thread.
         createNotificationChannels()
