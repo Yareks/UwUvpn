@@ -51,7 +51,10 @@ chmod +x "$WORK/repo"/scripts/*.sh
 cd "$WORK/repo"
 
 say "2/6 Secret scan"
-SCAN_RE='ghp_[A-Za-z0-9]{30,}|github_pat_|VeloxVpn2026|BEGIN [A-Z ]*PRIVATE KEY'
+# Generic secret patterns only — never embed real credentials here!
+# Optional extra patterns can be supplied via EXTRA_SCAN_RE=<regex>.
+SCAN_RE='ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|storePassword *= *"'
+[ -n "${EXTRA_SCAN_RE:-}" ] && SCAN_RE="$SCAN_RE|$EXTRA_SCAN_RE"
 if grep -rInE "$SCAN_RE" . --exclude-dir=.git --exclude='publish-release.sh' >/dev/null 2>&1; then
   echo "!! secret-looking string found in staged tree — aborting" >&2
   grep -rInE "$SCAN_RE" . --exclude-dir=.git --exclude='publish-release.sh' | head -5 >&2
