@@ -1,16 +1,22 @@
 package app.velox.vpn.core
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import android.provider.Settings
 import java.io.File
+import java.security.MessageDigest
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * JNI interface to our pure-Rust `libvelox_engine.so` anti-DPI coordinator,
- * cross-process ring-buffer diagnostic logger, multi-echelon US/DE provisioner,
- * live ETA/progress tracker, and authentic Telegram DC proxy verifier.
+ * JNI interface to our pure-Rust `libvelox_engine.so` v1.6.0 anti-DPI coordinator:
+ * - Dual-channel Primary + Hot-Standby zero-drop failover with strict country lock
+ * - Full offline Happ `crypt`..`crypt5`, `incy://crypt1/`, AES-GCM body & HWID support
+ * - Per-session CSPRNG-authenticated local SOCKS5 bridge & secret-redacted diagnostic logs
+ * - Multi-echelon US/DE/WL-RF/0%-Ad-YouTube provisioner and DC-verified Telegram proxy engine.
  */
 object VeloxNative {
 
@@ -27,11 +33,12 @@ object VeloxNative {
     fun ensureInitialized(context: Context) {
         ensureLibrary()
         if (initialized.compareAndSet(false, true)) {
-            val dir = File(context.applicationContext.filesDir, "engine").apply { mkdirs() }
+            val app = context.applicationContext
+            val dir = File(app.filesDir, "engine").apply { mkdirs() }
             val stateExists = File(dir, "velox_state.json").exists()
             val seed = if (!stateExists) {
                 runCatching {
-                    context.applicationContext.assets
+                    app.assets
                         .open("bootstrap_seed.json")
                         .bufferedReader(Charsets.UTF_8)
                         .use { it.readText() }
@@ -43,13 +50,41 @@ object VeloxNative {
         }
     }
 
-    /** Re-sync persisted `velox_state.json` across main and `:vpn` processes (<0.3 ms, silent). */
+    /** Re-sync persisted `velox_state.json` across main and `:vpn` processes (0 B read if mtime unchanged!). */
     @Synchronized
     fun reloadFromDisk(context: Context) {
         ensureInitialized(context)
         val dir = File(context.applicationContext.filesDir, "engine").apply { mkdirs() }
         init(dir.absolutePath, "")
     }
+
+    /** Free transient DNS/HTTP/feed caches in Rust without touching active tunnel or saved nodes. */
+    fun trimMemoryIfLoaded() {
+        if (initialized.get()) {
+            runCatching { trimMemory() }
+        }
+    }
+
+    /**
+     * Configure opt-in Happ-compatible `X-HWID` + device headers using a privacy-safe
+     * one-way SHA-256 hash of app-scoped `ANDROID_ID` (zero telephony/IMEI permissions).
+     */
+    @SuppressLint("HardwareIds")
+    fun syncHwidConfig(context: Context, enabled: Boolean): String = runCatching {
+        ensureInitialized(context)
+        val rawId = runCatching {
+            Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+        }.getOrNull().orEmpty().ifBlank { "velox-anon-device" }
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest("velox-hwid-v1:$rawId:${Build.MODEL}".toByteArray(Charsets.UTF_8))
+        val hwidHex = buildString(20) {
+            for (i in 0 until 10) append(String.format("%02x", digest[i].toInt() and 0xff))
+        }
+        val model = "${Build.MANUFACTURER} ${Build.MODEL}".trim().take(48)
+        val osVer = Build.VERSION.RELEASE.orEmpty().ifBlank { Build.VERSION.SDK_INT.toString() }
+        val locale = Locale.getDefault().toLanguageTag().ifBlank { "ru-RU" }
+        configureHwid(enabled, hwidHex, "Android", osVer, model, locale)
+    }.getOrDefault("{}")
 
     fun logInfo(context: Context, tag: String, msg: String) {
         runCatching {
@@ -79,11 +114,50 @@ object VeloxNative {
         }
     }
 
-    /** Concise, privacy-safe active network summary for connection diagnostics. */
+    /**
+     * Strict physical upstream network check (`NET_CAPABILITY_NOT_VPN` + `NET_CAPABILITY_INTERNET`) —
+     * never fooled by our own active `tun0` interface during elevator/subway/airplane transitions!
+     */
+    @Suppress("DEPRECATION")
+    fun hasPhysicalInternet(context: Context): Boolean = runCatching {
+        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return@runCatching true
+        val active = cm.activeNetwork
+        if (active != null) {
+            val caps = cm.getNetworkCapabilities(active)
+            if (caps != null &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            ) {
+                return@runCatching true
+            }
+        }
+        cm.allNetworks.any { net ->
+            val caps = cm.getNetworkCapabilities(net) ?: return@any false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH))
+        }
+    }.getOrDefault(true)
+
+    /** Concise, privacy-safe physical upstream network summary for connection diagnostics. */
+    @Suppress("DEPRECATION")
     fun describeActiveNetwork(context: Context): String = runCatching {
         val cm = context.getSystemService(ConnectivityManager::class.java)
             ?: return@runCatching "нет ConnectivityManager"
-        val net = cm.activeNetwork ?: return@runCatching "НЕТ АКТИВНОЙ СЕТИ"
+        val net = cm.allNetworks.firstOrNull { n ->
+            val c = cm.getNetworkCapabilities(n) ?: return@firstOrNull false
+            c.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) &&
+                c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                (c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                    c.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+                    c.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
+        } ?: cm.activeNetwork?.takeIf { n ->
+            cm.getNetworkCapabilities(n)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == true
+        } ?: return@runCatching "НЕТ ФИЗИЧЕСКОЙ СЕТИ"
+
         val caps = cm.getNetworkCapabilities(net) ?: return@runCatching "нет capabilities"
         val transport = when {
             caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
@@ -106,6 +180,13 @@ object VeloxNative {
 
     @JvmStatic
     external fun getStateSnapshot(targetRegion: String, whitelistMode: Boolean): String
+
+    @JvmStatic
+    external fun getStateSnapshotEx(
+        targetRegion: String,
+        whitelistMode: Boolean,
+        includeLogs: Boolean,
+    ): String
 
     @JvmStatic
     external fun prepareSeedQuickProbe(
@@ -149,8 +230,32 @@ object VeloxNative {
         whitelistMode: Boolean,
         bypassRu: Boolean,
         fragmentTls: Boolean,
+        adblock: Boolean,
         localSocksPort: Int,
+        dualChannel: Boolean,
+        idlePowerSave: Boolean,
+        socksUser: String,
+        socksPass: String,
     ): String
+
+    @JvmStatic
+    external fun configureHwid(
+        enabled: Boolean,
+        hwid: String,
+        deviceOs: String,
+        verOs: String,
+        deviceModel: String,
+        appLocale: String,
+    ): String
+
+    @JvmStatic
+    external fun setLocalSocksAuth(port: Int, user: String, pass: String)
+
+    @JvmStatic
+    external fun verifyTunnelWeb(localSocksPort: Int, isOpera: Boolean): String
+
+    @JvmStatic
+    external fun trimMemory()
 
     @JvmStatic
     external fun reportNodeFailure(nodeId: String, targetRegion: String, reason: String): String

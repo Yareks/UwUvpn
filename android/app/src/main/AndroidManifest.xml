@@ -22,6 +22,10 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="tg" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
         <package android:name="org.telegram.messenger" />
         <package android:name="org.telegram.messenger.web" />
         <package android:name="org.thunderdog.challegram" />
@@ -53,9 +57,36 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- 1-tap Deep-Link Import: Happ (crypt..crypt5/add), Incy, v2RayTun, v2rayNG,
+                 Hiddify, Streisand, Clash/FlClash, sing-box, Outline ssconf, Velox & proxy URIs -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="velox" />
+                <data android:scheme="happ" />
+                <data android:scheme="incy" />
+                <data android:scheme="v2raytun" />
+                <data android:scheme="v2rayng" />
+                <data android:scheme="hiddify" />
+                <data android:scheme="streisand" />
+                <data android:scheme="clash" />
+                <data android:scheme="flclash" />
+                <data android:scheme="sing-box" />
+                <data android:scheme="ssconf" />
+                <data android:scheme="vless" />
+                <data android:scheme="vmess" />
+                <data android:scheme="trojan" />
+                <data android:scheme="ss" />
+                <data android:scheme="hysteria2" />
+                <data android:scheme="hy2" />
+                <data android:scheme="wireguard" />
+                <data android:scheme="wg" />
+            </intent-filter>
         </activity>
 
-        <!-- Dedicated ultra-lightweight :vpn process (~8-14 MB RAM when UI is closed) -->
+        <!-- Dedicated ultra-lightweight :vpn process (~6-12 MB RAM when UI is closed) -->
         <service
             android:name=".service.VeloxVpnService"
             android:process=":vpn"
@@ -73,9 +104,10 @@
                 android:value="vpn_tunnel_service" />
         </service>
 
-        <!-- Standalone auto-healing local Telegram SOCKS5 + TG-WS bridge service (127.0.0.1:10809) -->
+        <!-- Shares isolated :vpn native heap (zero duplicate UI RAM when screen is off) -->
         <service
             android:name=".service.TgBridgeService"
+            android:process=":vpn"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property
@@ -83,7 +115,7 @@
                 android:value="local_telegram_proxy_bridge" />
         </service>
 
-        <!-- Quick Settings shade 1-tap VPN Tile (Android 7 - 16, optimized for Android 12 pill tile) -->
+        <!-- Quick Settings shade 1-tap VPN Tile (zero native lib load on tile poll!) -->
         <service
             android:name=".service.VeloxTileService"
             android:exported="true"

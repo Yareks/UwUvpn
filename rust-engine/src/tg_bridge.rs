@@ -489,16 +489,18 @@ async fn handle_socks5_client(mut client: TcpStream, bridge: &TgLocalBridge) -> 
     client.read_exact(&mut pb).await.map_err(|e| e.to_string())?;
     let target_port = u16::from_be_bytes(pb);
 
+    let _ = client.set_nodelay(true);
+
     // Path 1: Direct TG-WS WebSocket bridge for Telegram DC port 443 traffic
     if target_port == 443 && bridge.ws_available.load(Ordering::Relaxed) {
         if let Some(dc) = target_v4.and_then(telegram_ip_to_dc) {
-            if let Ok((ws_tls, _)) = open_tg_ws_stream(dc, Duration::from_millis(2500)).await {
-                // Send SOCKS5 success
+            if let Ok((ws_tls, leftover)) = open_tg_ws_stream(dc, Duration::from_millis(2500)).await
+            {
                 client
                     .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
                     .await
                     .map_err(|e| e.to_string())?;
-                return relay_tcp_with_ws(client, ws_tls, bridge).await;
+                return relay_tcp_with_ws(client, ws_tls, leftover, bridge).await;
             }
         }
     }
@@ -535,18 +537,23 @@ async fn handle_socks5_client(mut client: TcpStream, bridge: &TgLocalBridge) -> 
                 .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
                 .await
                 .map_err(|e| e.to_string())?;
-            if let Ok((up, down)) = tokio::io::copy_bidirectional(&mut client, &mut upstream).await {
+            if let Ok((up, down)) =
+                tokio::io::copy_bidirectional_with_sizes(&mut client, &mut upstream, 8192, 8192)
+                    .await
+            {
                 bridge.relayed_bytes.fetch_add(up + down, Ordering::Relaxed);
             }
             return Ok(());
         }
     }
 
-    // Path 3: Active local VPN core SOCKS5 on 127.0.0.1:10808 if running
+    // Path 3: Active local VPN core SOCKS5 on 127.0.0.1:10808 if running (uses session auth!)
     let local_vpn = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 10808);
+    let sess_auth = crate::net_util::local_socks_auth_for(local_vpn);
+    let sess_auth_ref = sess_auth.as_ref().map(|(u, p)| (u.as_str(), p.as_str()));
     if let Ok(mut upstream) = socks5_connect(
         local_vpn,
-        None,
+        sess_auth_ref,
         &target_host,
         target_port,
         Duration::from_millis(2000),
@@ -557,7 +564,9 @@ async fn handle_socks5_client(mut client: TcpStream, bridge: &TgLocalBridge) -> 
             .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
             .await
             .map_err(|e| e.to_string())?;
-        if let Ok((up, down)) = tokio::io::copy_bidirectional(&mut client, &mut upstream).await {
+        if let Ok((up, down)) =
+            tokio::io::copy_bidirectional_with_sizes(&mut client, &mut upstream, 8192, 8192).await
+        {
             bridge.relayed_bytes.fetch_add(up + down, Ordering::Relaxed);
         }
         return Ok(());
@@ -565,13 +574,13 @@ async fn handle_socks5_client(mut client: TcpStream, bridge: &TgLocalBridge) -> 
 
     // Path 4: Last-resort try TG-WS even if initial probe wasn't cached yet
     if let Some(dc) = target_v4.and_then(telegram_ip_to_dc) {
-        if let Ok((ws_tls, _)) = open_tg_ws_stream(dc, Duration::from_millis(3000)).await {
+        if let Ok((ws_tls, leftover)) = open_tg_ws_stream(dc, Duration::from_millis(3000)).await {
             bridge.ws_available.store(true, Ordering::Relaxed);
             client
                 .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
                 .await
                 .map_err(|e| e.to_string())?;
-            return relay_tcp_with_ws(client, ws_tls, bridge).await;
+            return relay_tcp_with_ws(client, ws_tls, leftover, bridge).await;
         }
     }
 
@@ -581,51 +590,86 @@ async fn handle_socks5_client(mut client: TcpStream, bridge: &TgLocalBridge) -> 
     Err("all TG bridge upstreams failed".into())
 }
 
+fn encode_ws_client_control_frame(opcode: u8, payload: &[u8]) -> Vec<u8> {
+    use rand::Rng;
+    let body = if payload.len() > 125 {
+        &payload[..125]
+    } else {
+        payload
+    };
+    let mut mask = [0u8; 4];
+    rand::thread_rng().fill(&mut mask);
+    let mut out = Vec::with_capacity(6 + body.len());
+    out.push(0x80 | (opcode & 0x0f));
+    out.push(0x80 | (body.len() as u8));
+    out.extend_from_slice(&mask);
+    for (i, b) in body.iter().enumerate() {
+        out.push(*b ^ mask[i & 3]);
+    }
+    out
+}
+
 async fn relay_tcp_with_ws(
     client: TcpStream,
     ws_tls: tokio_rustls::client::TlsStream<FragmentedTcpStream>,
+    leftover: Vec<u8>,
     bridge: &TgLocalBridge,
 ) -> Result<(), String> {
     let (mut c_rd, mut c_wr) = tokio::io::split(client);
-    let (mut w_rd, mut w_wr) = tokio::io::split(ws_tls);
+    let (w_rd_raw, mut w_wr) = tokio::io::split(ws_tls);
+    // Preserve every single byte piggybacked after `HTTP/1.1 101 Switching Protocols`!
+    let mut w_rd = tokio::io::AsyncReadExt::chain(std::io::Cursor::new(leftover), w_rd_raw);
+    let (pong_tx, mut pong_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(4);
 
     let c2w = async {
-        let mut buf = vec![0u8; 16_384];
+        // Compact 8 KiB buffer (halves idle per-socket RAM vs 16 KiB with identical MTProto speed!)
+        let mut buf = vec![0u8; 8192];
         let mut total = 0u64;
         let mut init_rem = 64usize;
         let mut init_buf = Vec::with_capacity(64);
         loop {
-            let n = match c_rd.read(&mut buf).await {
-                Ok(0) | Err(_) => break,
-                Ok(n) => n,
-            };
-            // Telegram kws1..5 requires the 64-byte obfuscated2 header as its own initial WS frame!
-            if init_rem > 0 {
-                let take = n.min(init_rem);
-                init_buf.extend_from_slice(&buf[..take]);
-                init_rem -= take;
-                if init_rem == 0 {
-                    let f1 = encode_ws_client_binary_frame(&init_buf);
-                    if w_wr.write_all(&f1).await.is_err() {
+            tokio::select! {
+                Some(ping_payload) = pong_rx.recv() => {
+                    // RFC 6455 §5.5.2: answer server Ping (0x09) with masked Pong (0x0A) so long TG sessions never drop!
+                    let pong = encode_ws_client_control_frame(0x0A, &ping_payload);
+                    if w_wr.write_all(&pong).await.is_err() || w_wr.flush().await.is_err() {
                         break;
                     }
-                    if n > take {
-                        let f2 = encode_ws_client_binary_frame(&buf[take..n]);
-                        if w_wr.write_all(&f2).await.is_err() {
-                            break;
+                }
+                rd = c_rd.read(&mut buf) => {
+                    let n = match rd {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => n,
+                    };
+                    // Telegram kws1..5 requires the 64-byte obfuscated2 header as its own initial WS frame!
+                    if init_rem > 0 {
+                        let take = n.min(init_rem);
+                        init_buf.extend_from_slice(&buf[..take]);
+                        init_rem -= take;
+                        if init_rem == 0 {
+                            let f1 = encode_ws_client_binary_frame(&init_buf);
+                            if w_wr.write_all(&f1).await.is_err() {
+                                break;
+                            }
+                            if n > take {
+                                let f2 = encode_ws_client_binary_frame(&buf[take..n]);
+                                if w_wr.write_all(&f2).await.is_err() {
+                                    break;
+                                }
+                            }
+                            let _ = w_wr.flush().await;
                         }
+                        total += n as u64;
+                        continue;
+                    }
+                    let frame = encode_ws_client_binary_frame(&buf[..n]);
+                    if w_wr.write_all(&frame).await.is_err() {
+                        break;
                     }
                     let _ = w_wr.flush().await;
+                    total += n as u64;
                 }
-                total += n as u64;
-                continue;
             }
-            let frame = encode_ws_client_binary_frame(&buf[..n]);
-            if w_wr.write_all(&frame).await.is_err() {
-                break;
-            }
-            let _ = w_wr.flush().await;
-            total += n as u64;
         }
         total
     };
@@ -633,7 +677,12 @@ async fn relay_tcp_with_ws(
     let w2c = async {
         let mut total = 0u64;
         loop {
-            let Ok((opcode, payload)) = read_ws_server_frame_half(&mut w_rd).await else {
+    let Ok((opcode, payload)) =
+                timeout(Duration::from_secs(360), read_ws_server_frame_half(&mut w_rd))
+                    .await
+                    .map_err(|_| String::new())
+                    .and_then(|r| r)
+            else {
                 break;
             };
             match opcode {
@@ -644,6 +693,9 @@ async fn relay_tcp_with_ws(
                         }
                         total += payload.len() as u64;
                     }
+                }
+                0x09 => {
+                    let _ = pong_tx.try_send(payload);
                 }
                 0x08 => break,
                 _ => {}

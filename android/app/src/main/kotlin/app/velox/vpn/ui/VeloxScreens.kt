@@ -85,16 +85,20 @@ import app.velox.vpn.core.EngineSnapshot
 import app.velox.vpn.core.InstalledAppInfo
 import app.velox.vpn.core.LiveProgressUpdate
 import app.velox.vpn.core.RuntimeProfileMode
+import app.velox.vpn.core.SELECTABLE_REGIONS
 import app.velox.vpn.core.SubSourceItem
 import app.velox.vpn.core.TgBridgeStatus
 import app.velox.vpn.core.TgProxy
 import app.velox.vpn.core.VpnNode
 import app.velox.vpn.core.VpnPhase
+import app.velox.vpn.core.VpnProtoFilter
 import app.velox.vpn.core.VpnRuntimeState
+import app.velox.vpn.core.VpnSortMode
 import app.velox.vpn.core.countryFlag
 import app.velox.vpn.core.formatBytesRu
 import app.velox.vpn.core.formatDuration
 import app.velox.vpn.core.formatEtaRu
+import app.velox.vpn.core.regionTitleRu
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -118,10 +122,13 @@ fun VeloxRootScreen(
     onSelectNode: (VpnNode) -> Unit,
     onRotateNode: () -> Unit,
     onRefreshVpn: () -> Unit,
+    onDiscoverMoreVpn: () -> Unit,
     onUpdateSettings: ((AppSettings) -> AppSettings, Boolean) -> Unit,
     onRefreshTg: () -> Unit,
+    onTgTabOpened: () -> Unit,
     onToggleTgBridge: (Boolean) -> Unit,
     onOpenTgLink: (String, String) -> Unit,
+    onOpenExternalUrl: (String) -> Unit,
     onCopyText: (String, String) -> Unit,
     onShareText: (String) -> Unit,
     onImportItem: (String, String) -> Unit,
@@ -162,7 +169,10 @@ fun VeloxRootScreen(
                 selectedTab = tab,
                 vpnActive = runtime.phase == VpnPhase.CONNECTED,
                 tgCount = snapshot.tgProxies.size,
-                onSelect = { tab = it }
+                onSelect = { idx ->
+                    tab = idx
+                    if (idx == 1) onTgTabOpened()
+                }
             )
         }
     ) { innerPadding ->
@@ -176,9 +186,12 @@ fun VeloxRootScreen(
                     settings = settings,
                     runtime = runtime,
                     nodes = snapshot.vpnNodes,
+                    allNodes = snapshot.allVpnNodes.ifEmpty { snapshot.vpnNodes },
                     customSubs = remember(snapshot.sources) { snapshot.sources.filter { !it.builtin } },
                     verifiedCount = snapshot.deviceVerifiedCount,
                     whitelistVerifiedCount = snapshot.whitelistVerifiedCount,
+                    ytAdFreeCount = snapshot.ytAdFreeCount,
+                    ytAdFreeLiveCount = snapshot.ytAdFreeLiveCount,
                     isRefreshing = isRefreshingVpn,
                     isBusyImport = isBusyImport,
                     manualProgress = manualProgress,
@@ -188,6 +201,7 @@ fun VeloxRootScreen(
                     onSelectNode = onSelectNode,
                     onRotateNode = onRotateNode,
                     onRefreshVpn = onRefreshVpn,
+                    onDiscoverMoreVpn = onDiscoverMoreVpn,
                     onOpenLogs = { showLogsDialog = true },
                     onOpenImportSub = {
                         importKindHint = "vpn"
@@ -195,6 +209,7 @@ fun VeloxRootScreen(
                     },
                     onSyncSource = onSyncSource,
                     onRemoveSource = onRemoveSource,
+                    onOpenExternalUrl = onOpenExternalUrl,
                     onUpdateSettings = onUpdateSettings,
                 )
 
@@ -228,6 +243,7 @@ fun VeloxRootScreen(
                     onToggleSource = onToggleSource,
                     onSyncSource = onSyncSource,
                     onRemoveSource = onRemoveSource,
+                    onOpenExternalUrl = onOpenExternalUrl,
                     onRegenerateWarp = onRegenerateWarp,
                     onRequestIgnoreBattery = onRequestIgnoreBattery,
                     onOpenSplitApps = {
@@ -289,7 +305,7 @@ fun VeloxRootScreen(
 }
 
 @Composable
-private fun VeloxTopBar(
+internal fun VeloxTopBar(
     phase: VpnPhase,
     tgBridgeOn: Boolean,
     onOpenLogs: () -> Unit,
@@ -320,7 +336,7 @@ private fun VeloxTopBar(
                     )
                     Spacer(Modifier.width(6.dp))
                     BadgePill(
-                        text = "1.2",
+                        text = "1.4",
                         bg = SurfaceElevated,
                         fg = EmeraldPrimary,
                     )
@@ -334,7 +350,7 @@ private fun VeloxTopBar(
                     }
                 }
                 Text(
-                    text = "США · Германия · Прокси Telegram",
+                    text = "YouTube 0% рекл. · Все сайты · Telegram",
                     style = MaterialTheme.typography.labelSmall,
                     color = TextLow,
                 )
@@ -379,7 +395,7 @@ private fun VeloxTopBar(
 }
 
 @Composable
-private fun VeloxBottomBar(
+internal fun VeloxBottomBar(
     selectedTab: Int,
     vpnActive: Boolean,
     tgCount: Int,
@@ -444,13 +460,16 @@ private fun VeloxBottomBar(
 // ============================================================================
 
 @Composable
-private fun VpnTabContent(
+internal fun VpnTabContent(
     settings: AppSettings,
     runtime: VpnRuntimeState,
     nodes: List<VpnNode>,
+    allNodes: List<VpnNode>,
     customSubs: List<SubSourceItem>,
     verifiedCount: Int,
     whitelistVerifiedCount: Int,
+    ytAdFreeCount: Int,
+    ytAdFreeLiveCount: Int,
     isRefreshing: Boolean,
     isBusyImport: Boolean,
     manualProgress: LiveProgressUpdate?,
@@ -460,16 +479,49 @@ private fun VpnTabContent(
     onSelectNode: (VpnNode) -> Unit,
     onRotateNode: () -> Unit,
     onRefreshVpn: () -> Unit,
+    onDiscoverMoreVpn: () -> Unit,
     onOpenLogs: () -> Unit,
     onOpenImportSub: () -> Unit,
     onSyncSource: (String) -> Unit,
     onRemoveSource: (String) -> Unit,
+    onOpenExternalUrl: (String) -> Unit,
     onUpdateSettings: ((AppSettings) -> AppSettings, Boolean) -> Unit,
 ) {
-    // Tick once per second while actively connected OR connecting/probing (for smooth ETA countdown)
+    var protoFilterName by rememberSaveable { mutableStateOf(VpnProtoFilter.ALL.name) }
+    var sortModeName by rememberSaveable { mutableStateOf(VpnSortMode.SMART.name) }
+    val protoFilter = VpnProtoFilter.entries.firstOrNull { it.name == protoFilterName } ?: VpnProtoFilter.ALL
+    val sortMode = VpnSortMode.entries.firstOrNull { it.name == sortModeName } ?: VpnSortMode.SMART
+
+    // Reset filter to ALL if selected protocol category has 0 matches after a region switch
+    val availableFilters = remember(nodes) {
+        VpnProtoFilter.entries.filter { f ->
+            f == VpnProtoFilter.ALL || nodes.any { f.matches(it) }
+        }
+    }
+    val effectiveFilter = if (protoFilter in availableFilters) protoFilter else VpnProtoFilter.ALL
+
+    val displayedNodes = remember(nodes, effectiveFilter, sortMode) {
+        val base = nodes.filter { effectiveFilter.matches(it) }
+        when (sortMode) {
+            VpnSortMode.SMART -> base
+            VpnSortMode.PING -> base.sortedBy { if (it.rttMs > 0) it.rttMs else 99_999 }
+            VpnSortMode.SPEED -> base.sortedByDescending { it.kbps }
+            VpnSortMode.COUNTRY -> base.sortedWith(
+                compareBy<VpnNode>({ it.exitCountry.ifBlank { "ZZ" } }, { if (it.rttMs > 0) it.rttMs else 99_999 })
+            )
+        }
+    }
+
+    // Lifecycle-gated ETA ticker: ticks ONLY during CONNECTING/FETCHING/HEALING and ONLY when visible!
+    // Connected uptime uses isolated leaf `LiveSessionTimerCell` -> 0 parent recompositions/sec!
+    val isUiStarted = rememberIsLifecycleStarted()
+    val needEtaTicker = isUiStarted && (
+        (runtime.isActiveOrBusy && runtime.phase != VpnPhase.CONNECTED) ||
+            (!runtime.isActiveOrBusy && isRefreshing)
+        )
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(runtime.phase, runtime.connectedSinceMs, isRefreshing) {
-        while (runtime.isActiveOrBusy || isRefreshing) {
+    LaunchedEffect(needEtaTicker) {
+        while (needEtaTicker) {
             nowMs = System.currentTimeMillis()
             delay(1000L)
         }
@@ -480,10 +532,11 @@ private fun VpnTabContent(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // 1. Country selector: USA / Germany / Auto
+        // 1. Multi-country & mode selector (16 countries/modes with live server counts)
         item {
             RegionSelectorBar(
                 selected = settings.region,
+                allNodes = allNodes,
                 onSelect = onSelectRegion,
             )
         }
@@ -493,6 +546,7 @@ private fun VpnTabContent(
             VpnHeroCard(
                 runtime = runtime,
                 nowMs = nowMs,
+                dualChannelEnabled = settings.dualChannel,
                 isRefreshing = isRefreshing,
                 manualProgress = manualProgress,
                 selectedRegion = settings.region,
@@ -504,43 +558,83 @@ private fun VpnTabContent(
             )
         }
 
-        // 3. Fast RF anti-block quick toggles
+        // 3. Fast YouTube No-Ads + RF anti-block quick toggles
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 QuickModeTile(
-                    modifier = Modifier.weight(1f),
-                    title = "Белые списки РФ",
+                    modifier = Modifier.fillMaxWidth(),
+                    title = "🛡️ Двойной канал 2× (основной + резерв)",
                     subtitle = when {
-                        settings.whitelistMode && whitelistVerifiedCount > 0 ->
-                            "Вкл · БС-РФ: $whitelistVerifiedCount живых"
-                        settings.whitelistMode ->
-                            "Вкл · Минцифры SNI/CIDR"
-                        whitelistVerifiedCount > 0 ->
-                            "Готово БС: $whitelistVerifiedCount · LTE/МТС/Т2"
-                        else -> "При блоке LTE/МТС/Т2"
+                        !settings.dualChannel ->
+                            "Выкл · нажмите для мгновенного резерва без потери связи"
+                        runtime.phase == VpnPhase.CONNECTED && runtime.dualChannelActive && runtime.standbyNodeName.isNotBlank() ->
+                            "Вкл · резерв ${countryFlag(runtime.standbyCountry)} ${runtime.standbyNodeName} (0 мс обрыва)"
+                        settings.region.equals("AUTO", ignoreCase = true) ->
+                            "Вкл · авто-выбор лучшего основного и резервного сервера"
+                        else ->
+                            "Вкл · основной и резервный строго в «${regionTitleRu(settings.region)}»"
                     },
-                    enabled = settings.whitelistMode,
+                    enabled = settings.dualChannel,
                     accent = CyanAccent,
                     onClick = {
-                        onUpdateSettings(
-                            { it.copy(whitelistMode = !it.whitelistMode, pinnedNodeId = "") },
-                            true
-                        )
+                        onUpdateSettings({ it.copy(dualChannel = !it.dualChannel) }, true)
                     }
                 )
                 QuickModeTile(
-                    modifier = Modifier.weight(1f),
-                    title = "Банки и РФ напрямую",
-                    subtitle = if (settings.bypassRu) "Сбер, Т-Банк, Госусл." else "Весь трафик в VPN",
-                    enabled = settings.bypassRu,
+                    modifier = Modifier.fillMaxWidth(),
+                    title = "📺 YouTube и сайты без рекламы",
+                    subtitle = when {
+                        !settings.adblockYoutube ->
+                            "Выкл · нажмите для 0% рекламы в YouTube и браузере"
+                        ytAdFreeLiveCount > 0 ->
+                            "Вкл · 0% видеорекламы YouTube ($ytAdFreeLiveCount серв.) + антибаннер сайтов"
+                        ytAdFreeCount > 0 ->
+                            "Вкл · $ytAdFreeCount серв. YouTube без рекламы (AL/MD/EU) + антибаннер"
+                        else ->
+                            "Вкл · авто-маршрут YouTube 0% рекламы + блокировка DoubleClick/Директ"
+                    },
+                    enabled = settings.adblockYoutube,
                     accent = EmeraldPrimary,
                     onClick = {
-                        onUpdateSettings({ it.copy(bypassRu = !it.bypassRu) }, true)
+                        onUpdateSettings({ it.copy(adblockYoutube = !it.adblockYoutube) }, true)
                     }
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    QuickModeTile(
+                        modifier = Modifier.weight(1f),
+                        title = "Белые списки РФ",
+                        subtitle = when {
+                            settings.whitelistMode && whitelistVerifiedCount > 0 ->
+                                "Вкл · БС-РФ: $whitelistVerifiedCount живых"
+                            settings.whitelistMode ->
+                                "Вкл · Минцифры SNI/CIDR"
+                            whitelistVerifiedCount > 0 ->
+                                "Готово БС: $whitelistVerifiedCount · LTE/МТС/Т2"
+                            else -> "При блоке LTE/МТС/Т2"
+                        },
+                        enabled = settings.whitelistMode,
+                        accent = CyanAccent,
+                        onClick = {
+                            onUpdateSettings(
+                                { it.copy(whitelistMode = !it.whitelistMode, pinnedNodeId = "") },
+                                true
+                            )
+                        }
+                    )
+                    QuickModeTile(
+                        modifier = Modifier.weight(1f),
+                        title = "Банки и РФ напрямую",
+                        subtitle = if (settings.bypassRu) "Сбер, Т-Банк, Госусл." else "Весь трафик в VPN",
+                        enabled = settings.bypassRu,
+                        accent = EmeraldPrimary,
+                        onClick = {
+                            onUpdateSettings({ it.copy(bypassRu = !it.bypassRu) }, true)
+                        }
+                    )
+                }
             }
         }
 
@@ -589,11 +683,12 @@ private fun VpnTabContent(
                         }
                         customSubs.forEach { sub ->
                             Spacer(Modifier.height(6.dp))
-                            CustomSubCompactRow(
+                            HappSubscriptionCard(
                                 sub = sub,
                                 busy = isBusyImport,
                                 onSync = { onSyncSource(sub.url) },
                                 onRemove = { onRemoveSource(sub.url) },
+                                onOpenUrl = onOpenExternalUrl,
                             )
                         }
                     }
@@ -610,20 +705,23 @@ private fun VpnTabContent(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     val liveInList = nodes.count { it.deviceVerified }
+                    val countryCnt = remember(allNodes) {
+                        allNodes.map { it.exitCountry }.filter { it.isNotBlank() }.distinct().size
+                    }
                     Text(
                         text = if (liveInList > 0) {
-                            "Рабочие серверы ($liveInList пров. · всего ${nodes.size})"
+                            "Подключения: ${displayedNodes.size} ($liveInList пров. · $countryCnt стран)"
                         } else {
-                            "Стартовый пул (${nodes.size}) · проверится при старте"
+                            "Пул подключений: ${displayedNodes.size} ($countryCnt стран)"
                         },
                         style = MaterialTheme.typography.titleSmall,
                         color = TextHigh,
                     )
                     Text(
                         text = if (settings.pinnedNodeId.isEmpty()) {
-                            "Автовыбор лучшего + горячий резерв"
+                            "${regionTitleRu(settings.region)} · автовыбор + горячий резерв"
                         } else {
                             "Узел закреплён · нажмите ещё раз для автовыбора"
                         },
@@ -631,21 +729,85 @@ private fun VpnTabContent(
                         color = TextLow,
                     )
                 }
-                TextButton(
-                    onClick = onRefreshVpn,
-                    enabled = !isRefreshing,
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                ) {
-                    Text(
-                        text = if (isRefreshing) "Проверка…" else "↻ Обновить",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = EmeraldPrimary,
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        onClick = onDiscoverMoreVpn,
+                        enabled = !isRefreshing,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            text = "＋ Ещё",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = CyanAccent,
+                        )
+                    }
+                    TextButton(
+                        onClick = onRefreshVpn,
+                        enabled = !isRefreshing,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            text = if (isRefreshing) "Поиск…" else "↻ Обновить",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = EmeraldPrimary,
+                        )
+                    }
                 }
             }
         }
 
-        if (nodes.isEmpty()) {
+        // Protocol filter chips + 1-tap sort switcher
+        if (nodes.isNotEmpty()) {
+            item {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(9.dp),
+                            color = SurfaceElevated,
+                            border = BorderStroke(1.dp, CyanAccent.copy(alpha = 0.45f)),
+                            modifier = Modifier.clickable {
+                                val list = VpnSortMode.entries
+                                val next = list[(list.indexOf(sortMode) + 1) % list.size]
+                                sortModeName = next.name
+                            }
+                        ) {
+                            Text(
+                                text = sortMode.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = CyanAccent,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+                    items(availableFilters, key = { it.name }) { flt ->
+                        val active = flt == effectiveFilter
+                        val cnt = if (flt == VpnProtoFilter.ALL) nodes.size else nodes.count { flt.matches(it) }
+                        Surface(
+                            shape = RoundedCornerShape(9.dp),
+                            color = if (active) EmeraldDim else SurfaceCard,
+                            border = BorderStroke(
+                                1.dp,
+                                if (active) EmeraldPrimary.copy(alpha = 0.7f) else SurfaceStroke
+                            ),
+                            modifier = Modifier.clickable { protoFilterName = flt.name }
+                        ) {
+                            Text(
+                                text = "${flt.label} ($cnt)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (active) EmeraldPrimary else TextMedium,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (displayedNodes.isEmpty()) {
             item {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
@@ -658,23 +820,34 @@ private fun VpnTabContent(
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
-                            text = "Нажмите кнопку подключения или «↻ Обновить»",
+                            text = "Нет узлов ${regionTitleRu(settings.region)} в кэше — нажмите «↻ Обновить» или «＋ Ещё»",
                             style = MaterialTheme.typography.titleSmall,
                             color = TextHigh,
                             textAlign = TextAlign.Center,
                         )
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(6.dp))
                         Text(
-                            text = "Движок автоматически подгрузит и проверит бесплатные узлы США и Германии (VLESS Reality, XHTTP, Hysteria2, Opera, WARP MASQUE).",
+                            text = "Движок проверит 76 источников: VLESS Reality, XHTTP, gRPC, WS, Hysteria 2, Trojan, VMess, Shadowsocks 2022, WireGuard, YouTube 0% рекламы (AL/MD/EU) и Cloudflare WARP MASQUE.",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextMedium,
                             textAlign = TextAlign.Center,
                         )
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = onRefreshVpn,
+                            enabled = !isRefreshing,
+                            border = BorderStroke(1.dp, EmeraldPrimary.copy(alpha = 0.65f)),
+                        ) {
+                            Text(
+                                text = "Найти серверы ${countryFlag(settings.region)} ${regionTitleRu(settings.region)}",
+                                color = EmeraldPrimary,
+                            )
+                        }
                     }
                 }
             }
         } else {
-            items(nodes, key = { it.id }) { node ->
+            items(displayedNodes, key = { it.id }) { node ->
                 val isCurrent = runtime.phase == VpnPhase.CONNECTED && runtime.activeNodeId == node.id
                 val isPinned = settings.pinnedNodeId == node.id
                 VpnNodeCard(
@@ -691,49 +864,63 @@ private fun VpnTabContent(
 }
 
 @Composable
-private fun RegionSelectorBar(
+internal fun RegionSelectorBar(
     selected: String,
+    allNodes: List<VpnNode>,
     onSelect: (String) -> Unit,
 ) {
-    val options = listOf(
-        "US" to "🇺🇸 США",
-        "DE" to "🇩🇪 Германия",
-        "AUTO" to "⚡ Авто",
-    )
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = SurfaceCard,
-        border = BorderStroke(1.dp, SurfaceStroke),
+    val countByCode = remember(allNodes) {
+        val m = HashMap<String, Int>()
+        m["AUTO"] = allNodes.size
+        m["YT"] = allNodes.count { it.ytAdFree }
+        m["WL"] = allNodes.count { it.whitelistFriendly && !it.viaWarp }
+        m["WARP"] = allNodes.count {
+            it.viaWarp || it.protocol == "masque" || it.displayProtocol.startsWith("WARP", ignoreCase = true)
+        }
+        for (n in allNodes) {
+            val cc = n.exitCountry.uppercase()
+            if (cc.length == 2) {
+                m[cc] = (m[cc] ?: 0) + 1
+            }
+        }
+        m
+    }
+    LazyRow(
         modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            for ((code, label) in options) {
-                val active = selected.equals(code, ignoreCase = true)
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (active) EmeraldDim else Color.Transparent)
-                        .border(
-                            width = if (active) 1.dp else 0.dp,
-                            color = if (active) EmeraldPrimary.copy(alpha = 0.65f) else Color.Transparent,
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                        .clickable { onSelect(code) }
-                        .padding(vertical = 10.dp),
-                    contentAlignment = Alignment.Center,
+        items(SELECTABLE_REGIONS, key = { it.code }) { opt ->
+            val active = selected.equals(opt.code, ignoreCase = true)
+            val cnt = countByCode[opt.code] ?: 0
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = if (active) EmeraldDim else SurfaceCard,
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = if (active) EmeraldPrimary.copy(alpha = 0.75f) else SurfaceStroke,
+                ),
+                modifier = Modifier.clickable { onSelect(opt.code) },
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     Text(
-                        text = label,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = if (active) EmeraldPrimary else TextMedium,
+                        text = "${opt.flag} ${opt.shortLabel}",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (active) EmeraldPrimary else TextHigh,
                         maxLines = 1,
                     )
+                    if (cnt > 0) {
+                        Text(
+                            text = "$cnt",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (active) EmeraldPrimary else CyanAccent,
+                        )
+                    }
                 }
             }
         }
@@ -741,9 +928,10 @@ private fun RegionSelectorBar(
 }
 
 @Composable
-private fun VpnHeroCard(
+internal fun VpnHeroCard(
     runtime: VpnRuntimeState,
     nowMs: Long,
+    dualChannelEnabled: Boolean,
     isRefreshing: Boolean,
     manualProgress: LiveProgressUpdate?,
     selectedRegion: String,
@@ -1028,11 +1216,7 @@ private fun VpnHeroCard(
                 }
             } else if (connected) {
                 Spacer(Modifier.height(14.dp))
-                // Live telemetry strip: Timer | Ping | Downlink | Uplink
-                val elapsed = if (runtime.connectedSinceMs > 0L) {
-                    (nowMs - runtime.connectedSinceMs).coerceAtLeast(0L)
-                } else 0L
-
+                // Zero-recomposition leaf uptime timer + Ping | Downlink | Uplink
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1041,7 +1225,7 @@ private fun VpnHeroCard(
                         .padding(vertical = 10.dp, horizontal = 8.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
-                    MetricCell("Время", formatDuration(elapsed), TextHigh)
+                    LiveSessionTimerCell(connectedSinceMs = runtime.connectedSinceMs)
                     MetricCell(
                         "Отклик",
                         if (runtime.rttMs > 0) "${runtime.rttMs} мс" else "—",
@@ -1051,8 +1235,17 @@ private fun VpnHeroCard(
                     MetricCell("↑ Отдача", formatBytesRu(runtime.uplinkBytes), EmeraldPrimary)
                 }
 
-                if (runtime.exitIp.isNotBlank() || runtime.backupCount > 0) {
+                if (dualChannelEnabled) {
                     Spacer(Modifier.height(8.dp))
+                    DualChannelLiveStrip(
+                        runtime = runtime,
+                        dualEnabled = dualChannelEnabled,
+                        selectedRegion = selectedRegion,
+                    )
+                }
+
+                if (runtime.exitIp.isNotBlank() || runtime.backupCount > 0) {
+                    Spacer(Modifier.height(7.dp))
                     Text(
                         text = buildString {
                             if (runtime.exitIp.isNotBlank()) {
@@ -1062,7 +1255,7 @@ private fun VpnHeroCard(
                                 append(" (${runtime.exitColo})")
                             }
                             if (runtime.backupCount > 0) {
-                                append(" · Горячий резерв: ${runtime.backupCount}")
+                                append(" · В пуле региона: +${runtime.backupCount}")
                             }
                         },
                         style = MaterialTheme.typography.labelSmall,
@@ -1105,7 +1298,7 @@ private fun VpnHeroCard(
 }
 
 @Composable
-private fun MetricCell(label: String, value: String, valueColor: Color) {
+internal fun MetricCell(label: String, value: String, valueColor: Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
@@ -1122,7 +1315,7 @@ private fun MetricCell(label: String, value: String, valueColor: Color) {
 }
 
 @Composable
-private fun QuickModeTile(
+internal fun QuickModeTile(
     modifier: Modifier,
     title: String,
     subtitle: String,
@@ -1179,7 +1372,7 @@ private fun QuickModeTile(
 }
 
 @Composable
-private fun VpnNodeCard(
+internal fun VpnNodeCard(
     node: VpnNode,
     isCurrent: Boolean,
     isPinned: Boolean,
@@ -1243,6 +1436,9 @@ private fun VpnNodeCard(
                         if (node.deviceVerified) {
                             BadgePill("✓ Живой", EmeraldDim, EmeraldPrimary)
                         }
+                        if (node.ytAdFree) {
+                            BadgePill("📺 YT 0%", EmeraldDim, EmeraldPrimary)
+                        }
                         if (node.whitelistFriendly) {
                             BadgePill("БС-РФ", EmeraldDim, EmeraldPrimary)
                         } else if (node.viaWarp) {
@@ -1281,1572 +1477,3 @@ private fun VpnNodeCard(
     }
 }
 
-// ============================================================================
-// TAB 2: TELEGRAM PROXIES (Authentic DC resPQ <= 1400 ms + Local TG-WS Bridge)
-// ============================================================================
-
-@Composable
-private fun TelegramTabContent(
-    settings: AppSettings,
-    proxies: List<TgProxy>,
-    tgStatus: TgBridgeStatus,
-    isRefreshing: Boolean,
-    onRefreshTg: () -> Unit,
-    onToggleBridge: (Boolean) -> Unit,
-    onOpenTgLink: (String, String) -> Unit,
-    onCopy: (String, String) -> Unit,
-    onShare: (String) -> Unit,
-    onOpenAddProxy: () -> Unit,
-) {
-    var filter by rememberSaveable { mutableStateOf("all") }
-
-    val filtered = remember(proxies, filter, settings.tgMaxRttMs) {
-        proxies.filter { p ->
-            p.rttMs <= settings.tgMaxRttMs && when (filter) {
-                "faketls" -> p.kind == "faketls"
-                "mtproto" -> p.kind == "dd" || p.kind == "classic"
-                "socks5" -> p.kind == "socks5"
-                else -> true
-            }
-        }
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(11.dp),
-    ) {
-        // 1. Smart Auto-Failover Local Proxy + TG-WS Bridge Card
-        item {
-            TgSmartBridgeCard(
-                status = tgStatus,
-                maxRttMs = settings.tgMaxRttMs,
-                onToggle = onToggleBridge,
-                onConnectTelegram = {
-                    val port = tgStatus.bridgePort.takeIf { it > 0 } ?: 10809
-                    onOpenTgLink(
-                        "tg://socks?server=127.0.0.1&port=$port",
-                        "https://t.me/socks?server=127.0.0.1&port=$port"
-                    )
-                },
-                onCopy = {
-                    val port = tgStatus.bridgePort.takeIf { it > 0 } ?: 10809
-                    onCopy("tg://socks?server=127.0.0.1&port=$port", "Ссылка локального прокси скопирована")
-                }
-            )
-        }
-
-        // 2. Live Fetch & Authentic Telegram DC Verification Card
-        item {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = SurfaceCard,
-                border = BorderStroke(1.dp, SurfaceStroke),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Реальная проверка DC Telegram",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = TextHigh,
-                            )
-                            Text(
-                                text = "MTProto resPQ к серверам Telegram · строго ≤ ${settings.tgMaxRttMs} мс",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextMedium,
-                            )
-                        }
-                    }
-
-                    if (isRefreshing) {
-                        Spacer(Modifier.height(10.dp))
-                        val progress = if (tgStatus.total > 0) {
-                            (tgStatus.checked.toFloat() / tgStatus.total.toFloat()).coerceIn(0f, 1f)
-                        } else 0f
-                        if (tgStatus.total > 0) {
-                            LinearProgressIndicator(
-                                progress = { progress },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(5.dp)
-                                    .clip(RoundedCornerShape(3.dp)),
-                                color = EmeraldPrimary,
-                                trackColor = SurfaceElevated,
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            val remItems = (tgStatus.total - tgStatus.checked).coerceAtLeast(0)
-                            val tgEtaSec = ((remItems * 12) / tgStatus.total.coerceAtLeast(1)).coerceAtLeast(1)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text(
-                                    text = "Проверено: ${tgStatus.checked}/${tgStatus.total} · Рабочих: ${tgStatus.alive}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = EmeraldPrimary,
-                                )
-                                Text(
-                                    text = "Осталось ${formatEtaRu(tgEtaSec)}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = CyanAccent,
-                                )
-                            }
-                        } else {
-                            LinearProgressIndicator(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(5.dp)
-                                    .clip(RoundedCornerShape(3.dp)),
-                                color = EmeraldPrimary,
-                                trackColor = SurfaceElevated,
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                text = "Загрузка списков Fake-TLS / MTProto / SOCKS5 · осталось ≈ 12 сек",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = CyanAccent,
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(11.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Button(
-                            onClick = onRefreshTg,
-                            enabled = !isRefreshing,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(11.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = EmeraldPrimary,
-                                contentColor = Color(0xFF002116),
-                            ),
-                            contentPadding = PaddingValues(vertical = 11.dp),
-                        ) {
-                            Text(
-                                text = if (isRefreshing) "Идёт проверка DC…" else "Найти и проверить прокси",
-                                style = MaterialTheme.typography.titleSmall,
-                            )
-                        }
-                        OutlinedButton(
-                            onClick = onOpenAddProxy,
-                            shape = RoundedCornerShape(11.dp),
-                            border = BorderStroke(1.dp, SurfaceStroke),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 11.dp),
-                        ) {
-                            Text("Свой", style = MaterialTheme.typography.labelMedium, color = TextHigh)
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. Protocol Filter Chips
-        item {
-            val faketlsCnt = proxies.count { it.kind == "faketls" && it.rttMs <= settings.tgMaxRttMs }
-            val mtpCnt = proxies.count { (it.kind == "dd" || it.kind == "classic") && it.rttMs <= settings.tgMaxRttMs }
-            val s5Cnt = proxies.count { it.kind == "socks5" && it.rttMs <= settings.tgMaxRttMs }
-            val chips = listOf(
-                "all" to "Все (${proxies.count { it.rttMs <= settings.tgMaxRttMs }})",
-                "faketls" to "Fake-TLS ($faketlsCnt)",
-                "mtproto" to "MTProto ($mtpCnt)",
-                "socks5" to "SOCKS5 · Звонки ($s5Cnt)",
-            )
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                items(chips) { (key, label) ->
-                    val sel = filter == key
-                    FilterChip(
-                        selected = sel,
-                        onClick = { filter = key },
-                        label = { Text(label, style = MaterialTheme.typography.labelMedium) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = EmeraldDim,
-                            selectedLabelColor = EmeraldPrimary,
-                            containerColor = SurfaceCard,
-                            labelColor = TextMedium,
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            enabled = true,
-                            selected = sel,
-                            borderColor = SurfaceStroke,
-                            selectedBorderColor = EmeraldPrimary.copy(alpha = 0.6f),
-                        )
-                    )
-                }
-            }
-        }
-
-        // 4. Verified <= 1400 ms Proxy List
-        if (filtered.isEmpty()) {
-            item {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = SurfaceCard,
-                    border = BorderStroke(1.dp, SurfaceStroke),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = "В этой категории пока нет прокси — нажмите «Найти и проверить прокси».",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextMedium,
-                        modifier = Modifier.padding(18.dp),
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-        } else {
-            items(filtered, key = { it.id }) { proxy ->
-                TgProxyCard(
-                    proxy = proxy,
-                    onConnect = { onOpenTgLink(proxy.tgLink, proxy.tmeLink) },
-                    onCopy = { onCopy(proxy.tgLink, "Прокси скопирован (${proxy.rttMs} мс)") },
-                    onShare = { onShare(proxy.tmeLink) },
-                )
-            }
-        }
-
-        item { Spacer(Modifier.height(8.dp)) }
-    }
-}
-
-@Composable
-private fun TgSmartBridgeCard(
-    status: TgBridgeStatus,
-    maxRttMs: Int,
-    onToggle: (Boolean) -> Unit,
-    onConnectTelegram: () -> Unit,
-    onCopy: () -> Unit,
-) {
-    val active = status.bridgeRunning
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = if (active) Color(0xFF0D2230) else SurfaceCard,
-        border = BorderStroke(
-            1.dp,
-            if (active) CyanAccent.copy(alpha = 0.65f) else SurfaceStroke
-        ),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.padding(15.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Умный авто-прокси + TG-WS",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = TextHigh,
-                        )
-                    }
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = if (active) {
-                            buildString {
-                                append("Активен на 127.0.0.1:${status.bridgePort}")
-                                if (status.wsAvailable && status.wsRttMs > 0) {
-                                    append(" · TG-WS: ${status.wsRttMs} мс")
-                                }
-                                if (status.bridgeBytes > 0L) {
-                                    append(" · ${formatBytesRu(status.bridgeBytes)}")
-                                }
-                            }
-                        } else {
-                            "Работает без VPN · прямой WebSocket 443 к Telegram + автосмена прокси ≤$maxRttMs мс"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (active) CyanAccent else TextMedium,
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Switch(
-                    checked = active,
-                    onCheckedChange = onToggle,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = BgObsidian,
-                        checkedTrackColor = CyanAccent,
-                    )
-                )
-            }
-
-            if (active) {
-                Spacer(Modifier.height(11.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Button(
-                        onClick = onConnectTelegram,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = CyanAccent,
-                            contentColor = Color(0xFF001F2A),
-                        ),
-                        contentPadding = PaddingValues(vertical = 9.dp),
-                    ) {
-                        Text("Включить в Telegram", style = MaterialTheme.typography.titleSmall)
-                    }
-                    OutlinedButton(
-                        onClick = onCopy,
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, SurfaceStroke),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 9.dp),
-                    ) {
-                        Text("Копир.", style = MaterialTheme.typography.labelMedium, color = TextHigh)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TgProxyCard(
-    proxy: TgProxy,
-    onConnect: () -> Unit,
-    onCopy: () -> Unit,
-    onShare: () -> Unit,
-) {
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = SurfaceCard,
-        border = BorderStroke(1.dp, SurfaceStroke),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val (badgeBg, badgeFg) = when (proxy.kind) {
-                        "faketls" -> EmeraldDim to EmeraldPrimary
-                        "socks5" -> CyanDim to CyanAccent
-                        else -> SurfaceElevated to TextHigh
-                    }
-                    BadgePill(proxy.kindLabel, badgeBg, badgeFg)
-                    if (proxy.supportsCalls) {
-                        BadgePill("Звонки", CyanDim, CyanAccent)
-                    }
-                    if (proxy.sniDomain.isNotBlank()) {
-                        Text(
-                            text = "SNI: ${proxy.sniDomain}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-
-                Spacer(Modifier.width(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "${proxy.rttMs} мс",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = rttColor(proxy.rttMs),
-                    )
-                    if (proxy.jitterMs > 0) {
-                        Text(
-                            text = " ±${proxy.jitterMs}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextLow,
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(5.dp))
-            Text(
-                text = "${proxy.host}:${proxy.port} · DC${proxy.verifiedDc} проверен",
-                style = MaterialTheme.typography.labelSmall,
-                color = TextLow,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            Spacer(Modifier.height(9.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(
-                    onClick = onConnect,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = EmeraldDim,
-                        contentColor = EmeraldPrimary,
-                    ),
-                    border = BorderStroke(1.dp, EmeraldPrimary.copy(alpha = 0.45f)),
-                    contentPadding = PaddingValues(vertical = 8.dp),
-                ) {
-                    Text("Подключить в Telegram", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                }
-                OutlinedButton(
-                    onClick = onCopy,
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, SurfaceStroke),
-                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 8.dp),
-                ) {
-                    Text("Копир.", style = MaterialTheme.typography.labelSmall, color = TextHigh)
-                }
-                OutlinedButton(
-                    onClick = onShare,
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, SurfaceStroke),
-                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 8.dp),
-                ) {
-                    Text("↗", style = MaterialTheme.typography.labelMedium, color = TextHigh)
-                }
-            }
-        }
-    }
-}
-
-// ============================================================================
-// TAB 3: SETTINGS (Anti-DPI, RAM Profile, Split Tunnel, WARP/Opera, Sources, Logs)
-// ============================================================================
-
-@Composable
-private fun SettingsTabContent(
-    settings: AppSettings,
-    snapshot: EngineSnapshot,
-    isBusyWarp: Boolean,
-    isBusyImport: Boolean,
-    batteryIgnored: Boolean,
-    onUpdateSettings: ((AppSettings) -> AppSettings, Boolean) -> Unit,
-    onOpenImport: (String) -> Unit,
-    onToggleSource: (String, Boolean) -> Unit,
-    onSyncSource: (String) -> Unit,
-    onRemoveSource: (String) -> Unit,
-    onRegenerateWarp: () -> Unit,
-    onRequestIgnoreBattery: () -> Unit,
-    onOpenSplitApps: () -> Unit,
-    onOpenLogsDialog: () -> Unit,
-    onCopy: (String, String) -> Unit,
-    onFormatDiagExport: (List<String>) -> String,
-    onClearLogs: () -> Unit,
-) {
-    var showSources by rememberSaveable { mutableStateOf(false) }
-    var showLogs by rememberSaveable { mutableStateOf(false) }
-    var rttSlider by remember(settings.tgMaxRttMs) {
-        mutableFloatStateOf(settings.tgMaxRttMs.toFloat())
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        // 1. Performance & Memory Profile
-        item {
-            SettingsCard(title = "Производительность и расход ОЗУ") {
-                for (mode in RuntimeProfileMode.entries) {
-                    val selected = settings.profileMode == mode
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (selected) EmeraldDim.copy(alpha = 0.65f) else Color.Transparent)
-                            .clickable {
-                                onUpdateSettings({ it.copy(profileMode = mode) }, true)
-                            }
-                            .padding(horizontal = 10.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = mode.title,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = if (selected) EmeraldPrimary else TextHigh,
-                            )
-                            Text(
-                                text = mode.subtitle,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextMedium,
-                            )
-                        }
-                        if (selected) {
-                            BadgePill("ВЫБРАНО", EmeraldDim, EmeraldPrimary)
-                        }
-                    }
-                }
-
-                if (!batteryIgnored) {
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = onRequestIgnoreBattery,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, AmberWarn.copy(alpha = 0.5f)),
-                    ) {
-                        Text(
-                            text = "Отключить экономию батареи для стабильного фона",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = AmberWarn,
-                        )
-                    }
-                }
-            }
-        }
-
-        // 2. Anti-DPI (TSPU) & Auto-Healing
-        item {
-            SettingsCard(title = "Обход блокировок ТСПУ и автозащита") {
-                SettingSwitchRow(
-                    title = "Фрагментация TLS ClientHello",
-                    subtitle = "Дробит SNI-пакет (finalmask) против DPI провайдеров",
-                    checked = settings.fragmentTls,
-                    onCheckedChange = { v -> onUpdateSettings({ it.copy(fragmentTls = v) }, true) }
-                )
-                HorizontalDivider(color = SurfaceStroke.copy(alpha = 0.5f))
-                SettingSwitchRow(
-                    title = "Режим белых списков РФ",
-                    subtitle = "Приоритет российских SNI при ограничениях мобильного интернета",
-                    checked = settings.whitelistMode,
-                    onCheckedChange = { v ->
-                        onUpdateSettings({ it.copy(whitelistMode = v, pinnedNodeId = "") }, true)
-                    }
-                )
-                HorizontalDivider(color = SurfaceStroke.copy(alpha = 0.5f))
-                SettingSwitchRow(
-                    title = "Автовосстановление и смена узла",
-                    subtitle = "Проверяет туннель (включая блок 16 КБ) и сам подгружает рабочие узлы",
-                    checked = settings.autoHeal,
-                    onCheckedChange = { v -> onUpdateSettings({ it.copy(autoHeal = v) }, false) }
-                )
-            }
-        }
-
-        // 3. Split Tunneling
-        item {
-            SettingsCard(title = "Раздельное туннелирование") {
-                SettingSwitchRow(
-                    title = "Банки, Госуслуги и РФ без VPN",
-                    subtitle = "Сбер, Т-Банк, ВТБ, Альфа, Мир Pay, Госуслуги, Ozon, WB, Яндекс, домены .ru/.рф",
-                    checked = settings.bypassRu,
-                    onCheckedChange = { v -> onUpdateSettings({ it.copy(bypassRu = v) }, true) }
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = onOpenSplitApps,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, SurfaceStroke),
-                ) {
-                    val cnt = settings.excludedPackages.size
-                    Text(
-                        text = if (cnt > 0) "Исключённые приложения: $cnt (изменить)" else "Выбрать приложения без VPN",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = TextHigh,
-                    )
-                }
-            }
-        }
-
-        // 4. Telegram RTT Threshold
-        item {
-            SettingsCard(title = "Фильтр отклика прокси Telegram") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = "Макс. время ответа DC Telegram",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextHigh,
-                    )
-                    Text(
-                        text = "≤ ${rttSlider.toInt()} мс",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = EmeraldPrimary,
-                    )
-                }
-                Slider(
-                    value = rttSlider,
-                    onValueChange = { rttSlider = (it / 50f).toInt() * 50f },
-                    onValueChangeFinished = {
-                        onUpdateSettings({ it.copy(tgMaxRttMs = rttSlider.toInt().coerceIn(400, 1400)) }, false)
-                    },
-                    valueRange = 400f..1400f,
-                )
-                Text(
-                    text = "Все медленные и фейковые прокси выше порога (максимум 1400 мс) отбрасываются автоматически.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextLow,
-                )
-            }
-        }
-
-        // 5. Built-in Free Echelons (WARP MASQUE/AWG + Opera US/EU)
-        item {
-            SettingsCard(title = "Встроенные бесплатные эшелоны (без аккаунта)") {
-                Text(
-                    text = buildString {
-                        append("• Эшелон 1: VLESS Reality / XHTTP / Hysteria2 (США и Германия)\n")
-                        append("• Эшелон 2: Opera HTTPS TLS US/EU (активных: ${snapshot.operaCount})\n")
-                        append("• Эшелон 3: Cloudflare WARP ")
-                        if (snapshot.hasWarpWg || snapshot.hasWarpMasque) {
-                            append("готов (${snapshot.warpIpv4}, MASQUE H3/H2 + AWG Noise)")
-                        } else {
-                            append("(выпускается автоматически при обновлении)")
-                        }
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextMedium,
-                )
-                Spacer(Modifier.height(10.dp))
-                OutlinedButton(
-                    onClick = onRegenerateWarp,
-                    enabled = !isBusyWarp,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, SurfaceStroke),
-                ) {
-                    Text(
-                        text = if (isBusyWarp) "Регистрация WARP + MASQUE…" else "Перевыпустить ключи WARP + MASQUE",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = CyanAccent,
-                    )
-                }
-            }
-        }
-
-        // 6. Auto-Update Sources & Custom Subscriptions
-        item {
-            val customSubs = remember(snapshot.sources) { snapshot.sources.filter { !it.builtin } }
-            val builtinSubs = remember(snapshot.sources) { snapshot.sources.filter { it.builtin } }
-            SettingsCard(
-                title = "Мои подписки и источники (${snapshot.sources.count { it.enabled }}/${snapshot.sources.size})"
-            ) {
-                Text(
-                    text = "Умное дельта-обновление: рабочие серверы и прокси сохраняются, нерабочие удаляются, новые догружаются автоматически.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextMedium,
-                )
-                Spacer(Modifier.height(8.dp))
-                if (customSubs.isNotEmpty()) {
-                    customSubs.forEach { sub ->
-                        CustomSubCompactRow(
-                            sub = sub,
-                            busy = isBusyImport,
-                            onSync = { onSyncSource(sub.url) },
-                            onRemove = { onRemoveSource(sub.url) },
-                        )
-                        Spacer(Modifier.height(6.dp))
-                    }
-                }
-                if (snapshot.customVpnCount > 0) {
-                    Text(
-                        text = "Отдельных VPN-ключей: ${snapshot.customVpnCount}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = EmeraldPrimary,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Button(
-                        onClick = { onOpenImport("auto") },
-                        enabled = !isBusyImport,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = EmeraldDim,
-                            contentColor = EmeraldPrimary,
-                        ),
-                    ) {
-                        Text(
-                            if (isBusyImport) "Загрузка…" else "+ Подписка / ключ",
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = { showSources = !showSources },
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, SurfaceStroke),
-                    ) {
-                        Text(
-                            if (showSources) "Скрыть" else "Фиды (${builtinSubs.size})",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = TextHigh
-                        )
-                    }
-                }
-
-                if (showSources) {
-                    Spacer(Modifier.height(8.dp))
-                    builtinSubs.forEach { src ->
-                        SourceRow(src = src, onToggle = { en -> onToggleSource(src.url, en) })
-                    }
-                }
-            }
-        }
-
-        // 7. Rust Engine Diagnostic Log & About
-        item {
-            SettingsCard(title = "Подробные логи и о приложении") {
-                Text(
-                    text = "VeloxVPN 1.3.0 · Ядро xray-rust 0.10.0 + velox-engine (100% Rust)\n" +
-                        "Белые списки РФ (Минцифры SNI + CIDR) · MASQUE-Chain US/DE · 41 источник · Подписки\n" +
-                        "Умное дельта-обновление · Android 7.0–16 · Без рекламы и аккаунтов",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextMedium,
-                )
-                Spacer(Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(7.dp),
-                ) {
-                    Button(
-                        onClick = onOpenLogsDialog,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = SurfaceElevated,
-                            contentColor = EmeraldPrimary,
-                        ),
-                        border = BorderStroke(1.dp, EmeraldPrimary.copy(alpha = 0.45f)),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 9.dp),
-                    ) {
-                        Text(
-                            "Журнал (${snapshot.logs.size})",
-                            style = MaterialTheme.typography.labelMedium,
-                            maxLines = 1,
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            onCopy(
-                                onFormatDiagExport(snapshot.logs),
-                                "Подробный лог (${snapshot.logs.size} строк) скопирован"
-                            )
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, SurfaceStroke),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 9.dp),
-                    ) {
-                        Text("Копировать", style = MaterialTheme.typography.labelMedium, color = CyanAccent)
-                    }
-                    if (snapshot.logs.size > 1) {
-                        OutlinedButton(
-                            onClick = onClearLogs,
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, SurfaceStroke),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 9.dp),
-                        ) {
-                            Text("Очистить", style = MaterialTheme.typography.labelMedium, color = TextLow)
-                        }
-                    }
-                }
-                if (snapshot.logs.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    TextButton(
-                        onClick = { showLogs = !showLogs },
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
-                    ) {
-                        Text(
-                            if (showLogs) "▴ Скрыть последние записи" else "▾ Показать последние 20 записей здесь",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextMedium,
-                        )
-                    }
-                }
-                if (showLogs && snapshot.logs.isNotEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(BgObsidian)
-                            .border(1.dp, SurfaceStroke, RoundedCornerShape(10.dp))
-                            .padding(10.dp)
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            snapshot.logs.takeLast(20).forEach { line ->
-                                Text(
-                                    text = line,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 10.5.sp,
-                                    lineHeight = 14.sp,
-                                    color = diagLineColor(line),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        item { Spacer(Modifier.height(8.dp)) }
-    }
-}
-
-@Composable
-private fun SettingsCard(
-    title: String,
-    content: @Composable () -> Unit,
-) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = SurfaceCard,
-        border = BorderStroke(1.dp, SurfaceStroke),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.padding(15.dp)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                color = EmeraldPrimary,
-            )
-            Spacer(Modifier.height(10.dp))
-            content()
-        }
-    }
-}
-
-@Composable
-private fun SettingSwitchRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, color = TextHigh)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = TextMedium)
-        }
-        Spacer(Modifier.width(10.dp))
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = BgObsidian,
-                checkedTrackColor = EmeraldPrimary,
-            )
-        )
-    }
-}
-
-@Composable
-private fun CustomSubCompactRow(
-    sub: SubSourceItem,
-    busy: Boolean,
-    onSync: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = SurfaceElevated,
-        border = BorderStroke(1.dp, SurfaceStroke),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = sub.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = TextHigh,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                val meta = buildString {
-                    if (sub.cachedCount > 0) {
-                        append(if (sub.kind == "tg") "${sub.cachedCount} прокси" else "${sub.cachedCount} серверов")
-                    } else {
-                        append("Нажмите ↻ для загрузки")
-                    }
-                    if (sub.userinfo.isNotBlank()) {
-                        append(" · ${sub.userinfo}")
-                    }
-                }
-                Text(
-                    text = meta,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = EmeraldPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                TextButton(
-                    onClick = onSync,
-                    enabled = !busy,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                ) {
-                    Text("↻", style = MaterialTheme.typography.titleSmall, color = CyanAccent)
-                }
-                TextButton(
-                    onClick = onRemove,
-                    enabled = !busy,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                ) {
-                    Text("✕", style = MaterialTheme.typography.labelMedium, color = CoralError)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SourceRow(src: SubSourceItem, onToggle: (Boolean) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                BadgePill(
-                    text = if (src.kind == "tg") "TG" else src.regionHint,
-                    bg = SurfaceElevated,
-                    fg = if (src.kind == "tg") CyanAccent else EmeraldPrimary,
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = src.name,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = TextHigh,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        Switch(
-            checked = src.enabled,
-            onCheckedChange = onToggle,
-        )
-    }
-}
-
-// ============================================================================
-// DIALOGS (Universal Key/Proxy/Subscription Import + Per-App Split Tunneling)
-// ============================================================================
-
-@Composable
-private fun UniversalImportDialog(
-    initialHint: String,
-    onDismiss: () -> Unit,
-    onPasteClipboard: () -> String,
-    onSubmit: (String, String) -> Unit,
-) {
-    var input by remember { mutableStateOf("") }
-    var subKind by remember { mutableStateOf(if (initialHint == "tg_proxy") "tg" else "vpn") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = SurfaceCard,
-        title = {
-            Text("Добавить подписку, ключ или прокси", style = MaterialTheme.typography.titleMedium, color = TextHigh)
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Поддерживаются любые https:// подписки (Remnawave, Marzban, Happ, 3x-ui, Hiddify и др.), happ://, v2raytun://, vless://, vmess://, hy2://, trojan://, ss://, tg://proxy и socks5://.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextMedium,
-                )
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it },
-                    placeholder = {
-                        Text(
-                            "https://.../s/... или happ://... или vless://... или tg://proxy?...",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 4,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(onClick = {
-                        val clip = onPasteClipboard()
-                        if (clip.isNotBlank()) input = clip
-                    }) {
-                        Text("Вставить из буфера", color = CyanAccent)
-                    }
-                    if ((input.trim().startsWith("https://") || input.trim().startsWith("http://")) &&
-                        !input.contains("t.me/")
-                    ) {
-                        TextButton(onClick = { subKind = if (subKind == "vpn") "tg" else "vpn" }) {
-                            Text(
-                                text = if (subKind == "vpn") "Авто / VPN" else "Тип: TG",
-                                color = EmeraldPrimary
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onSubmit(input.trim(), subKind) },
-                enabled = input.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = EmeraldPrimary,
-                    contentColor = Color(0xFF002116),
-                )
-            ) {
-                Text("Добавить")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Отмена", color = TextMedium)
-            }
-        }
-    )
-}
-
-@Composable
-private fun DiagnosticLogDialog(
-    initialLogs: List<String>,
-    onLoadLogs: () -> List<String>,
-    onClearLogs: (onCleared: (List<String>) -> Unit) -> Unit,
-    onCopy: (List<String>) -> Unit,
-    onShare: (List<String>) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var logs by remember { mutableStateOf(initialLogs) }
-    var filter by remember { mutableStateOf("all") }
-
-    // Live cross-process tail every 1.2s ONLY while dialog is open (zero cost otherwise)
-    LaunchedEffect(Unit) {
-        while (true) {
-            val fresh = withContext(Dispatchers.IO) { onLoadLogs() }
-            if (fresh != logs) {
-                logs = fresh
-            }
-            delay(1200L)
-        }
-    }
-
-    val filtered = remember(logs, filter) {
-        val src = when (filter) {
-            "err" -> logs.filter { "[ERR]" in it || "[WARN]" in it }
-            "vpn" -> logs.filter {
-                "[VPN]" in it || "[TUN]" in it || "[XRAY]" in it || "[HEAL]" in it || "[NET]" in it
-            }
-            "probe" -> logs.filter {
-                "[PROBE]" in it || "[FEED]" in it || "[SRC]" in it || "[SYNC]" in it ||
-                    "[OPERA]" in it || "[WARP]" in it || "[DOH]" in it
-            }
-            "tg" -> logs.filter { "[TG]" in it }
-            else -> logs
-        }
-        src.asReversed() // newest events right at the top for instant visibility!
-    }
-
-    val filterOptions = listOf(
-        "all" to "Все (${logs.size})",
-        "err" to "Ошибки/Пред.",
-        "vpn" to "VPN/TUN",
-        "probe" to "Пробы/Сеть",
-        "tg" to "Telegram",
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = SurfaceCard,
-        title = {
-            Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "Журнал диагностики",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = TextHigh,
-                    )
-                    BadgePill("LIVE", EmeraldDim, EmeraldPrimary)
-                }
-                Text(
-                    text = "Новые события сверху · обновляется в реальном времени",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextLow,
-                )
-            }
-        },
-        text = {
-            Column {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(filterOptions) { (key, title) ->
-                        FilterChip(
-                            selected = filter == key,
-                            onClick = { filter = key },
-                            label = { Text(title, style = MaterialTheme.typography.labelSmall) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = EmeraldDim,
-                                selectedLabelColor = EmeraldPrimary,
-                                containerColor = SurfaceElevated,
-                                labelColor = TextMedium,
-                            ),
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(320.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(BgObsidian)
-                        .border(1.dp, SurfaceStroke, RoundedCornerShape(10.dp))
-                        .padding(horizontal = 9.dp, vertical = 8.dp)
-                ) {
-                    if (filtered.isEmpty()) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "Записей в выбранной категории пока нет",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextLow,
-                                textAlign = TextAlign.Center,
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            items(filtered.size) { idx ->
-                                val line = filtered[idx]
-                                Text(
-                                    text = line,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 10.5.sp,
-                                    lineHeight = 14.sp,
-                                    color = diagLineColor(line),
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = { onCopy(logs) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(9.dp),
-                        border = BorderStroke(1.dp, SurfaceStroke),
-                        contentPadding = PaddingValues(vertical = 7.dp),
-                    ) {
-                        Text("Копировать", style = MaterialTheme.typography.labelSmall, color = CyanAccent)
-                    }
-                    OutlinedButton(
-                        onClick = { onShare(logs) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(9.dp),
-                        border = BorderStroke(1.dp, SurfaceStroke),
-                        contentPadding = PaddingValues(vertical = 7.dp),
-                    ) {
-                        Text("Поделиться", style = MaterialTheme.typography.labelSmall, color = TextHigh)
-                    }
-                    OutlinedButton(
-                        onClick = { onClearLogs { fresh -> logs = fresh } },
-                        shape = RoundedCornerShape(9.dp),
-                        border = BorderStroke(1.dp, SurfaceStroke),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
-                    ) {
-                        Text("Сброс", style = MaterialTheme.typography.labelSmall, color = TextLow)
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Закрыть", color = EmeraldPrimary)
-            }
-        }
-    )
-}
-
-private fun diagLineColor(line: String): Color = when {
-    "[ERR]" in line -> CoralError
-    "[WARN]" in line -> AmberWarn
-    "[OK]" in line -> EmeraldPrimary
-    else -> TextMedium
-}
-
-@Composable
-private fun AppSplitTunnelDialog(
-    apps: List<InstalledAppInfo>?,
-    excluded: Set<String>,
-    onTogglePkg: (String, Boolean) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var query by remember { mutableStateOf("") }
-    var onlySelected by remember { mutableStateOf(false) }
-
-    val filtered = remember(apps, query, excluded, onlySelected) {
-        apps?.filter { app ->
-            (!onlySelected || app.packageName in excluded) && (
-                query.isBlank() ||
-                    app.label.contains(query, ignoreCase = true) ||
-                    app.packageName.contains(query, ignoreCase = true)
-                )
-        }?.sortedWith(
-            compareByDescending<InstalledAppInfo> { it.packageName in excluded }
-                .thenBy { it.label.lowercase() }
-        )
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = SurfaceCard,
-        title = {
-            Column {
-                Text(
-                    text = "Приложения без VPN",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextHigh,
-                )
-                Text(
-                    text = "Выбрано: ${excluded.size} · идут напрямую мимо туннеля",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextLow,
-                )
-            }
-        },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = { Text("Поиск по названию или пакету…", style = MaterialTheme.typography.bodySmall) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                if (apps != null) {
-                    Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = !onlySelected,
-                            onClick = { onlySelected = false },
-                            label = { Text("Все (${apps.size})", style = MaterialTheme.typography.labelSmall) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = EmeraldDim,
-                                selectedLabelColor = EmeraldPrimary,
-                                containerColor = SurfaceElevated,
-                                labelColor = TextMedium,
-                            ),
-                        )
-                        FilterChip(
-                            selected = onlySelected,
-                            onClick = { onlySelected = true },
-                            label = { Text("Выбранные (${excluded.size})", style = MaterialTheme.typography.labelSmall) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = EmeraldDim,
-                                selectedLabelColor = EmeraldPrimary,
-                                containerColor = SurfaceElevated,
-                                labelColor = TextMedium,
-                            ),
-                        )
-                    }
-                }
-                Spacer(Modifier.height(6.dp))
-                if (filtered == null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(160.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(color = EmeraldPrimary, modifier = Modifier.size(30.dp))
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = "Загрузка списка приложений…",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = TextLow,
-                            )
-                        }
-                    }
-                } else if (filtered.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(110.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = if (onlySelected) "Пока не выбрано ни одного приложения" else "Ничего не найдено",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextLow,
-                        )
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.heightIn(max = 350.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        items(filtered, key = { it.packageName }) { app ->
-                            val isEx = app.packageName in excluded
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(if (isEx) EmeraldDim.copy(alpha = 0.35f) else Color.Transparent)
-                                    .clickable { onTogglePkg(app.packageName, !isEx) }
-                                    .padding(horizontal = 4.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                InstalledAppIconBox(
-                                    packageName = app.packageName,
-                                    label = app.label,
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = app.label,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = if (isEx) FontWeight.SemiBold else FontWeight.Normal,
-                                        color = TextHigh,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        text = app.packageName,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = TextLow,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                Checkbox(
-                                    checked = isEx,
-                                    onCheckedChange = { onTogglePkg(app.packageName, it) }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Готово", color = EmeraldPrimary)
-            }
-        }
-    )
-}
-
-@Composable
-private fun InstalledAppIconBox(
-    packageName: String,
-    label: String,
-) {
-    val context = LocalContext.current
-    var iconBitmap by remember(packageName) {
-        mutableStateOf<ImageBitmap?>(AppIconCache.getCached(packageName))
-    }
-
-    LaunchedEffect(packageName) {
-        if (iconBitmap == null) {
-            iconBitmap = AppIconCache.load(context, packageName)
-        }
-    }
-
-    val bmp = iconBitmap
-    if (bmp != null) {
-        Image(
-            bitmap = bmp,
-            contentDescription = label,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(38.dp)
-                .clip(RoundedCornerShape(10.dp)),
-        )
-    } else {
-        // Clean monogram placeholder for the few milliseconds before async decode completes
-        Box(
-            modifier = Modifier
-                .size(38.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(SurfaceElevated)
-                .border(1.dp, SurfaceStroke, RoundedCornerShape(10.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = label.firstOrNull()?.uppercase() ?: "•",
-                style = MaterialTheme.typography.titleSmall,
-                color = CyanAccent,
-            )
-        }
-    }
-}
-
-// ============================================================================
-// ZERO-BLOAT VECTOR GLYPHS & HELPERS (0 KB icon-pack overhead!)
-// ============================================================================
-
-@Composable
-private fun BadgePill(text: String, bg: Color, fg: Color) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(5.dp))
-            .background(bg)
-            .padding(horizontal = 6.dp, vertical = 2.dp)
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = fg,
-            maxLines = 1,
-        )
-    }
-}
-
-private fun rttColor(ms: Int): Color = when {
-    ms <= 0 -> TextMedium
-    ms <= 550 -> EmeraldPrimary
-    ms <= 950 -> CyanAccent
-    ms <= 1400 -> AmberWarn
-    else -> CoralError
-}
-
-@Composable
-private fun PowerGlyph(modifier: Modifier, color: Color) {
-    Canvas(modifier = modifier) {
-        val sw = size.minDimension * 0.085f
-        val pad = sw * 1.4f
-        drawArc(
-            color = color,
-            startAngle = -52f,
-            sweepAngle = 284f,
-            useCenter = false,
-            topLeft = Offset(pad, pad),
-            size = Size(size.width - pad * 2, size.height - pad * 2),
-            style = Stroke(width = sw, cap = StrokeCap.Round),
-        )
-        drawLine(
-            color = color,
-            start = Offset(size.width / 2f, size.height * 0.08f),
-            end = Offset(size.width / 2f, size.height * 0.48f),
-            strokeWidth = sw,
-            cap = StrokeCap.Round,
-        )
-    }
-}
-
-@Composable
-private fun VeloxShieldGlyph(modifier: Modifier, color: Color) {
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        val p = Path().apply {
-            moveTo(w * 0.5f, h * 0.08f)
-            lineTo(w * 0.88f, h * 0.24f)
-            lineTo(w * 0.88f, h * 0.53f)
-            cubicTo(w * 0.88f, h * 0.76f, w * 0.70f, h * 0.88f, w * 0.5f, h * 0.95f)
-            cubicTo(w * 0.30f, h * 0.88f, w * 0.12f, h * 0.76f, w * 0.12f, h * 0.53f)
-            lineTo(w * 0.12f, h * 0.24f)
-            close()
-        }
-        drawPath(p, color = color, style = Stroke(width = w * 0.09f, cap = StrokeCap.Round))
-        drawLine(
-            color = color,
-            start = Offset(w * 0.35f, h * 0.40f),
-            end = Offset(w * 0.50f, h * 0.68f),
-            strokeWidth = w * 0.09f,
-            cap = StrokeCap.Round,
-        )
-        drawLine(
-            color = color,
-            start = Offset(w * 0.50f, h * 0.68f),
-            end = Offset(w * 0.67f, h * 0.35f),
-            strokeWidth = w * 0.09f,
-            cap = StrokeCap.Round,
-        )
-    }
-}
-
-@Composable
-private fun NavVectorIcon(kind: Int, active: Boolean) {
-    val c = if (active) EmeraldPrimary else TextMedium
-    Canvas(modifier = Modifier.size(21.dp)) {
-        val w = size.width
-        val h = size.height
-        val sw = w * 0.095f
-        when (kind) {
-            0 -> {
-                // Shield
-                val p = Path().apply {
-                    moveTo(w * 0.5f, h * 0.10f)
-                    lineTo(w * 0.86f, h * 0.25f)
-                    lineTo(w * 0.86f, h * 0.54f)
-                    cubicTo(w * 0.86f, h * 0.76f, w * 0.68f, h * 0.88f, w * 0.5f, h * 0.94f)
-                    cubicTo(w * 0.32f, h * 0.88f, w * 0.14f, h * 0.76f, w * 0.14f, h * 0.54f)
-                    lineTo(w * 0.14f, h * 0.25f)
-                    close()
-                }
-                drawPath(p, color = c, style = Stroke(width = sw))
-            }
-            1 -> {
-                // Telegram paper-plane glyph
-                val p = Path().apply {
-                    moveTo(w * 0.10f, h * 0.52f)
-                    lineTo(w * 0.90f, h * 0.16f)
-                    lineTo(w * 0.72f, h * 0.86f)
-                    lineTo(w * 0.45f, h * 0.64f)
-                    close()
-                }
-                drawPath(p, color = c, style = Stroke(width = sw, cap = StrokeCap.Round))
-            }
-            else -> {
-                // Sliders / tuning glyph
-                drawLine(c, Offset(w * 0.14f, h * 0.28f), Offset(w * 0.86f, h * 0.28f), sw, StrokeCap.Round)
-                drawCircle(c, radius = w * 0.11f, center = Offset(w * 0.36f, h * 0.28f))
-                drawLine(c, Offset(w * 0.14f, h * 0.72f), Offset(w * 0.86f, h * 0.72f), sw, StrokeCap.Round)
-                drawCircle(c, radius = w * 0.11f, center = Offset(w * 0.66f, h * 0.72f))
-            }
-        }
-    }
-}

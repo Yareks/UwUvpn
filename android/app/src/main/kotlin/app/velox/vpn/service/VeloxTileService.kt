@@ -12,8 +12,8 @@ import app.velox.vpn.core.regionTitleRu
 import app.velox.vpn.ui.MainActivity
 
 /**
- * 1-tap Quick Settings Tile — works smoothly across Android 7–16 including
- * Android 12 (API 31/32) large two-line pill tiles and Android 14+ PendingIntent requirement.
+ * Zero-native-RAM 1-tap Quick Settings Tile (Android 7–16, optimized for Android 12 pill tiles).
+ * Reads only the tiny locked JSON snapshot — never loads `libvelox_engine.so` on system tile polls.
  */
 class VeloxTileService : TileService() {
 
@@ -28,7 +28,6 @@ class VeloxTileService : TileService() {
         if (rt.isActiveOrBusy) {
             VeloxVpnService.requestStop(this)
         } else if (VpnService.prepare(this) != null) {
-            // First-ever launch: open MainActivity to grant one-time system VPN consent
             val openIntent = Intent(this, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -60,10 +59,12 @@ class VeloxTileService : TileService() {
             tile.subtitle = when (rt.phase) {
                 VpnPhase.CONNECTED -> {
                     val country = rt.exitCountry.ifBlank { settings.region }
-                    "${regionTitleRu(country)} · ${rt.rttMs} мс"
+                    val dual = if (rt.dualChannelActive) " · 2×" else ""
+                    val rtt = if (rt.rttMs > 0) " · ${rt.rttMs} мс" else ""
+                    "${regionTitleRu(country)}$rtt$dual"
                 }
                 VpnPhase.CONNECTING, VpnPhase.FETCHING, VpnPhase.HEALING -> {
-                    if (rt.etaSeconds > 0) "${rt.progressPercent}% · ≈${rt.etaSeconds}с" else "Подключение…"
+                    if (rt.etaSeconds > 0) "${rt.progressPercent}% · ≈${rt.etaSeconds}с" else "Ожидание…"
                 }
                 else -> regionTitleRu(settings.region)
             }

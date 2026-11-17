@@ -2,13 +2,16 @@ package app.velox.vpn.core
 
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.RandomAccessFile
 
 /**
- * Atomic cross-process settings and VPN runtime state store (shared safely between
- * the main Compose UI process, the dedicated `:vpn` tunnel process, and `VeloxTileService`).
+ * Advisory-locked (`FileLock`) atomic cross-process settings and VPN runtime state store,
+ * shared cleanly between the Compose UI process, the `:vpn` tunnel process, and `VeloxTileService`.
  */
 object VeloxPrefs {
 
@@ -24,6 +27,55 @@ object VeloxPrefs {
 
     private fun settingsFile(ctx: Context) = File(ctx.applicationContext.filesDir, "velox_settings.json")
     private fun runtimeFile(ctx: Context) = File(ctx.applicationContext.filesDir, "vpn_runtime.json")
+    private fun socksAuthFile(ctx: Context) = File(ctx.applicationContext.filesDir, "socks_session.json")
+    private fun lockFile(ctx: Context, name: String) = File(ctx.applicationContext.filesDir, "$name.lock")
+
+    /** Save ephemeral per-session CSPRNG SOCKS5 credentials (mode-private `filesDir` — readable only by our UID). */
+    fun saveSessionSocksAuth(ctx: Context, port: Int, user: String, pass: String) {
+        val o = JSONObject().apply {
+            put("port", port)
+            put("user", user)
+            put("pass", pass)
+        }
+        writeAtomicLocked(lockFile(ctx, "socks"), socksAuthFile(ctx), o.toString())
+        runCatching {
+            val f = socksAuthFile(ctx)
+            f.setReadable(false, false)
+            f.setReadable(true, true)
+            f.setWritable(false, false)
+            f.setWritable(true, true)
+        }
+    }
+
+    fun clearSessionSocksAuth(ctx: Context) {
+        runCatching { socksAuthFile(ctx).delete() }
+    }
+
+    /**
+     * When `:vpn` is actively `CONNECTED`, loads the current per-session CSPRNG SOCKS5 credentials
+     * into this process's `VeloxNative` and returns `LOCAL_VPN_SOCKS_PORT` (10808); otherwise returns `0`.
+     * Enables authenticated `check-url-via-proxy` subscription updates, TG refreshes, and WARP key rotation!
+     */
+    fun resolveActiveLocalSocksPort(ctx: Context): Int {
+        if (loadRuntime(ctx).phase != VpnPhase.CONNECTED) {
+            runCatching { VeloxNative.setLocalSocksAuth(0, "", "") }
+            return 0
+        }
+        val f = socksAuthFile(ctx)
+        if (!f.exists()) return 0
+        return runCatching {
+            val o = JSONObject(f.readText(Charsets.UTF_8))
+            val p = o.optInt("port", LOCAL_VPN_SOCKS_PORT)
+            val u = o.optString("user", "")
+            val pw = o.optString("pass", "")
+            if (p > 0 && u.isNotEmpty() && pw.isNotEmpty()) {
+                VeloxNative.setLocalSocksAuth(p, u, pw)
+                p
+            } else {
+                0
+            }
+        }.getOrDefault(0)
+    }
 
     @Synchronized
     fun loadSettings(ctx: Context): AppSettings {
@@ -32,11 +84,14 @@ object VeloxPrefs {
         return runCatching {
             val o = JSONObject(f.readText(Charsets.UTF_8))
             AppSettings(
-                region = o.optString("region", "US").ifBlank { "US" },
+                region = o.optString("region", "AUTO").ifBlank { "AUTO" },
                 pinnedNodeId = o.optString("pinnedNodeId", ""),
+                dualChannel = o.optBoolean("dualChannel", true),
+                sendHwid = o.optBoolean("sendHwid", false),
                 whitelistMode = o.optBoolean("whitelistMode", false),
                 bypassRu = o.optBoolean("bypassRu", true),
                 fragmentTls = o.optBoolean("fragmentTls", true),
+                adblockYoutube = o.optBoolean("adblockYoutube", true),
                 autoHeal = o.optBoolean("autoHeal", true),
                 profileMode = RuntimeProfileMode.from(o.optString("profileMode", "mobile")),
                 tgMaxRttMs = o.optInt("tgMaxRttMs", 1400).coerceIn(300, 1400),
@@ -50,9 +105,12 @@ object VeloxPrefs {
         val o = JSONObject().apply {
             put("region", s.region)
             put("pinnedNodeId", s.pinnedNodeId)
+            put("dualChannel", s.dualChannel)
+            put("sendHwid", s.sendHwid)
             put("whitelistMode", s.whitelistMode)
             put("bypassRu", s.bypassRu)
             put("fragmentTls", s.fragmentTls)
+            put("adblockYoutube", s.adblockYoutube)
             put("autoHeal", s.autoHeal)
             put("profileMode", s.profileMode.code)
             put("tgMaxRttMs", s.tgMaxRttMs.coerceIn(300, 1400))
@@ -60,14 +118,33 @@ object VeloxPrefs {
             s.excludedPackages.forEach { arr.put(it) }
             put("excludedPackages", arr)
         }
-        writeAtomic(settingsFile(ctx), o.toString())
+        writeAtomicLocked(lockFile(ctx, "settings"), settingsFile(ctx), o.toString())
     }
 
+    @Synchronized
     fun updateSettings(ctx: Context, transform: (AppSettings) -> AppSettings): AppSettings {
-        val current = loadSettings(ctx)
-        val updated = transform(current)
-        saveSettings(ctx, updated)
-        return updated
+        return withCrossProcessLock(lockFile(ctx, "settings")) {
+            val current = loadSettings(ctx)
+            val updated = transform(current)
+            val o = JSONObject().apply {
+                put("region", updated.region)
+                put("pinnedNodeId", updated.pinnedNodeId)
+                put("dualChannel", updated.dualChannel)
+                put("sendHwid", updated.sendHwid)
+                put("whitelistMode", updated.whitelistMode)
+                put("bypassRu", updated.bypassRu)
+                put("fragmentTls", updated.fragmentTls)
+                put("adblockYoutube", updated.adblockYoutube)
+                put("autoHeal", updated.autoHeal)
+                put("profileMode", updated.profileMode.code)
+                put("tgMaxRttMs", updated.tgMaxRttMs.coerceIn(300, 1400))
+                val arr = JSONArray()
+                updated.excludedPackages.forEach { arr.put(it) }
+                put("excludedPackages", arr)
+            }
+            writeAtomicUnlocked(settingsFile(ctx), o.toString())
+            updated
+        }
     }
 
     fun loadRuntime(ctx: Context): VpnRuntimeState {
@@ -77,20 +154,40 @@ object VeloxPrefs {
             VpnRuntimeState.fromJson(JSONObject(f.readText(Charsets.UTF_8)))
         }.getOrDefault(VpnRuntimeState())
 
-        // If :vpn process was killed long ago without clean shutdown, sanitize stale status
-        if (state.isActiveOrBusy && state.updatedAtMs > 0L) {
-            val ageMs = System.currentTimeMillis() - state.updatedAtMs
-            if (ageMs > 15 * 60 * 1000L) {
-                return VpnRuntimeState()
-            }
+        val ageMs = if (state.updatedAtMs > 0L) {
+            (System.currentTimeMillis() - state.updatedAtMs).coerceAtLeast(0L)
+        } else {
+            Long.MAX_VALUE
+        }
+
+        // Instant real OS VPN check: if file claims CONNECTED (>4s old) while Android has zero active
+        // TRANSPORT_VPN interface (e.g. :vpn was killed by OEM task killer or reboot), clear immediately!
+        if (state.phase == VpnPhase.CONNECTED && ageMs > 4_000L && !isSystemVpnTransportUp(ctx)) {
+            return VpnRuntimeState()
+        }
+        // Transient FETCHING/CONNECTING without updates for >90s means the service died mid-connect
+        if ((state.phase == VpnPhase.FETCHING || state.phase == VpnPhase.CONNECTING) && ageMs > 90_000L) {
+            return VpnRuntimeState()
+        }
+        // HEALING can stay silent while waiting for elevator/subway network, cap at 6h if orphaned
+        if (state.phase == VpnPhase.HEALING && ageMs > 6 * 3600 * 1000L) {
+            return VpnRuntimeState()
         }
         return state
     }
 
+    @Suppress("DEPRECATION")
+    private fun isSystemVpnTransportUp(ctx: Context): Boolean = runCatching {
+        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return@runCatching true
+        cm.allNetworks.any { net ->
+            cm.getNetworkCapabilities(net)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+        }
+    }.getOrDefault(true)
+
     @Synchronized
     fun publishRuntime(ctx: Context, state: VpnRuntimeState, broadcast: Boolean = true) {
         val stamped = state.copy(updatedAtMs = System.currentTimeMillis())
-        writeAtomic(runtimeFile(ctx), stamped.toJson().toString())
+        writeAtomicLocked(lockFile(ctx, "runtime"), runtimeFile(ctx), stamped.toJson().toString())
         if (broadcast) {
             val intent = Intent(ACTION_VPN_RUNTIME).setPackage(ctx.packageName)
             runCatching { ctx.sendBroadcast(intent) }
@@ -110,10 +207,31 @@ object VeloxPrefs {
         runCatching { ctx.sendBroadcast(intent) }
     }
 
-    private fun writeAtomic(target: File, content: String) {
+    private inline fun <T> withCrossProcessLock(lockTarget: File, block: () -> T): T {
+        runCatching {
+            lockTarget.parentFile?.mkdirs()
+            RandomAccessFile(lockTarget, "rw").use { raf ->
+                raf.channel.lock().use {
+                    return block()
+                }
+            }
+        }
+        return block()
+    }
+
+    private fun writeAtomicLocked(lockTarget: File, target: File, content: String) {
+        withCrossProcessLock(lockTarget) {
+            writeAtomicUnlocked(target, content)
+        }
+    }
+
+    private fun writeAtomicUnlocked(target: File, content: String) {
         runCatching {
             target.parentFile?.mkdirs()
-            val tmp = File(target.parentFile, "${target.name}.tmp")
+            val tmp = File(
+                target.parentFile,
+                "${target.name}.${android.os.Process.myPid()}.tmp"
+            )
             tmp.writeText(content, Charsets.UTF_8)
             if (!tmp.renameTo(target)) {
                 target.writeText(content, Charsets.UTF_8)

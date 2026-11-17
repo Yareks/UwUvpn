@@ -103,11 +103,20 @@ class TgBridgeService : Service() {
                 )
                 VeloxPrefs.notifyTgBridgeChanged(this@TgBridgeService)
 
-                // Silently keep pool fresh every 25 minutes in case an upstream proxy retires
+                // Battery-smart maintenance: check every 45 min, skip heavy sweeps while screen is off
+                // (Doze-friendly!) if we already hold >=8 verified proxies, and skip if offline.
                 while (isActive) {
-                    delay(25 * 60 * 1000L)
+                    delay(45 * 60 * 1000L)
+                    if (!VeloxNative.hasPhysicalInternet(this@TgBridgeService)) continue
+                    val pm = getSystemService(android.os.PowerManager::class.java)
+                    val screenOn = pm?.isInteractive != false
+                    val st = runCatching { JSONObject(VeloxNative.getTgStatus()) }.getOrNull()
+                    val aliveCnt = st?.optInt("alive", 0) ?: 0
+                    if (!screenOn && aliveCnt >= 8) continue
                     val cur = VeloxPrefs.loadSettings(this@TgBridgeService)
-                    runCatching { VeloxNative.refreshTgProxies(cur.tgMaxRttMs, 0) }
+                    val socks = VeloxPrefs.resolveActiveLocalSocksPort(this@TgBridgeService)
+                    runCatching { VeloxNative.refreshTgProxies(cur.tgMaxRttMs, socks) }
+                    VeloxNative.trimMemoryIfLoaded()
                     VeloxPrefs.notifyTgBridgeChanged(this@TgBridgeService)
                 }
             }

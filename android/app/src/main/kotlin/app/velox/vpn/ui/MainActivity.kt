@@ -37,13 +37,13 @@ import app.velox.vpn.core.VeloxNative
 import app.velox.vpn.core.VeloxPrefs
 import app.velox.vpn.core.VpnBatchProber
 import app.velox.vpn.core.VpnNode
+import app.velox.vpn.core.VpnPhase
 import app.velox.vpn.core.VpnRuntimeState
 import app.velox.vpn.core.regionTitleRu
 import app.velox.vpn.service.TgBridgeService
 import app.velox.vpn.service.VeloxVpnService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
     private var isBusyImport by mutableStateOf(false)
     private var batteryIgnored by mutableStateOf(true)
     private var pendingForceRefresh = false
+    private var lastHandledDeepLink: String = ""
 
     private val snackbarHost = SnackbarHostState()
     private var receiverRegistered = false
@@ -129,8 +130,12 @@ class MainActivity : ComponentActivity() {
         runtimeState = VeloxPrefs.loadRuntime(this)
         updateBatteryFlag()
         registerBusReceiver()
-        refreshEngineSnapshotAsync(reloadDisk = false)
-        triggerStartupSmartDeltaSync()
+        refreshEngineSnapshotAsync(reloadDisk = false, syncHwid = true)
+
+        val consumedDeepLink = handleIncomingDeepLink(intent)
+        if (!consumedDeepLink) {
+            triggerStartupSmartDeltaSync()
+        }
 
         setContent {
             VeloxTheme {
@@ -152,10 +157,13 @@ class MainActivity : ComponentActivity() {
                     onSelectNode = ::handleSelectNode,
                     onRotateNode = { VeloxVpnService.requestRotate(this) },
                     onRefreshVpn = ::handleRefreshVpn,
+                    onDiscoverMoreVpn = ::handleDiscoverMoreVpn,
                     onUpdateSettings = ::handleUpdateSettings,
                     onRefreshTg = ::handleRefreshTgProxies,
+                    onTgTabOpened = ::maybeLazySyncTgProxies,
                     onToggleTgBridge = ::handleToggleTgBridge,
                     onOpenTgLink = ::openTelegramProxyLink,
+                    onOpenExternalUrl = ::openExternalUrlSafe,
                     onCopyText = ::copyToClipboard,
                     onShareText = ::sharePlainText,
                     onImportItem = ::handleImportCustom,
@@ -174,10 +182,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingDeepLink(intent)
+    }
+
     override fun onResume() {
         super.onResume()
         settingsState = VeloxPrefs.loadSettings(this)
-        runtimeState = VeloxPrefs.loadRuntime(this)
+        val rt = VeloxPrefs.loadRuntime(this)
+        runtimeState = rt
+        // Auto-reconcile spinner if a background refresh completed while Activity was paused
+        if (isRefreshingVpn && !VpnBatchProber.isRunning() && !rt.isActiveOrBusy) {
+            vpnRefreshDelegated = false
+            isRefreshingVpn = false
+            manualRefreshProgress = null
+        }
         updateBatteryFlag()
         refreshEngineSnapshotAsync(reloadDisk = true)
     }
@@ -188,6 +209,21 @@ class MainActivity : ComponentActivity() {
             receiverRegistered = false
         }
         super.onDestroy()
+    }
+
+    /**
+     * 1-tap Deep-Link import for `happ://crypt`..`crypt5`, `incy://crypt1/`, `happ://add/`,
+     * `v2raytun://`, `v2rayng://`, `hiddify://`, `streisand://`, `clash://`, `flclash://`,
+     * `sing-box://`, `ssconf://`, `velox://`, and direct proxy URIs (`vless://`, `hy2://`, etc.).
+     */
+    private fun handleIncomingDeepLink(intent: Intent?): Boolean {
+        if (intent?.action != Intent.ACTION_VIEW) return false
+        val rawUri = intent.dataString?.trim().orEmpty()
+        if (rawUri.isBlank() || rawUri == lastHandledDeepLink) return false
+        lastHandledDeepLink = rawUri
+        intent.data = null
+        handleImportCustom(rawUri, "auto")
+        return true
     }
 
     private fun registerBusReceiver() {
@@ -212,51 +248,43 @@ class MainActivity : ComponentActivity() {
         bgSyncJob = null
     }
 
+    /** Emit progress cleanly to Compose state (throttled to <=4 Hz to avoid coroutine allocation churn). */
+    private fun makeUiProgressCallback(): (LiveProgressUpdate) -> Unit {
+        var lastPostMs = 0L
+        var lastPct = -1
+        return { upd ->
+            val now = System.currentTimeMillis()
+            if (now - lastPostMs >= 260L || upd.percent != lastPct) {
+                lastPostMs = now
+                lastPct = upd.percent
+                runOnUiThread {
+                    if (!isDestroyed) manualRefreshProgress = upd
+                }
+            }
+        }
+    }
+
     /**
-     * Smart First-Launch Preload & Incremental Delta Sync (v1.3):
-     * - Automatically loads & verifies real live VPN servers (US/DE/Белые списки РФ) + TG proxies
-     *   in background on launch so pressing «ПОДКЛЮЧИТЬ» connects in ~0.1s!
-     * - Incremental: keeps every still-working entry untouched (no redundant reinstall!), drops
-     *   dead old entries, and adds fresh verified entries. Yields immediately if user taps Connect!
+     * Battery-smart First-Launch Preload & Incremental Delta Sync (v1.6.0):
+     * - Respects verified cached VPN pool for 45 min (0 s instant launch when fresh!).
+     * - Defers heavy Telegram proxy sweeps to the Telegram tab unless pool is empty or >3 h old.
+     * - Incremental: preserves working servers, prunes dead ones, tops up new ones; yields immediately on Connect!
      */
     private fun triggerStartupSmartDeltaSync() {
         bgSyncJob?.cancel()
         abortBgSync = false
         bgSyncJob = lifecycleScope.launch(Dispatchers.IO) {
-            delay(500L)
+            delay(550L)
             if (abortBgSync || runtimeState.isActiveOrBusy) return@launch
+            if (!VeloxNative.hasPhysicalInternet(this@MainActivity)) return@launch
 
             val cur = settingsState
             val snap0 = loadSnapshotBlocking(cur.region, reloadDisk = false)
             withContext(Dispatchers.Main) { engineSnapshot = snap0 }
 
             val nowSec = System.currentTimeMillis() / 1000L
-            val tgAge = nowSec - snap0.lastTgRefreshUnix
             val vpnAge = nowSec - snap0.lastVpnRefreshUnix
-            val needTg = snap0.tgProxies.size < 5 || tgAge > 900L
-            val needVpn = snap0.deviceVerifiedCount < 5 ||
-                snap0.whitelistVerifiedCount == 0 ||
-                vpnAge > 900L
-
-            val tgDeferred = if (needTg && !isRefreshingTg) {
-                async(Dispatchers.IO) {
-                    withContext(Dispatchers.Main) { isRefreshingTg = true }
-                    try {
-                        VeloxNative.refreshTgProxies(cur.tgMaxRttMs, 0)
-                        val snap = loadSnapshotBlocking(settingsState.region, reloadDisk = false)
-                        val st = TgBridgeStatus.fromJsonStr(VeloxNative.getTgStatus())
-                        withContext(Dispatchers.Main) {
-                            engineSnapshot = snap
-                            tgStatusState = st
-                        }
-                    } catch (_: Throwable) {
-                    } finally {
-                        withContext(Dispatchers.Main) { isRefreshingTg = false }
-                    }
-                }
-            } else {
-                null
-            }
+            val needVpn = snap0.deviceVerifiedCount < 4 || vpnAge > 2700L
 
             if (needVpn && !isRefreshingVpn && !abortBgSync && !runtimeState.isActiveOrBusy) {
                 withContext(Dispatchers.Main) {
@@ -265,29 +293,25 @@ class MainActivity : ComponentActivity() {
                         stageIndex = 1,
                         stageTotal = 5,
                         percent = 8,
-                        etaSeconds = if (snap0.deviceVerifiedCount == 0) 12 else 6,
+                        etaSeconds = if (snap0.deviceVerifiedCount == 0) 11 else 5,
                         statusLine = if (snap0.deviceVerifiedCount == 0) {
-                            "Автоподготовка рабочих серверов…"
+                            "Автоподготовка основного и резервного серверов…"
                         } else {
                             "Умная сверка серверов…"
                         },
                         detailLine = "Рабочие сохраняем, нерабочие заменяем новыми",
                     )
                 }
+                val progressCb = makeUiProgressCallback()
                 val res = runCatching {
                     VpnBatchProber.smartDeltaSyncBlocking(
                         context = this@MainActivity,
                         settings = settingsState,
                         shouldAbort = { abortBgSync || runtimeState.isActiveOrBusy },
-                        onProgress = { upd ->
-                            if (!abortBgSync) {
-                                lifecycleScope.launch(Dispatchers.Main) {
-                                    manualRefreshProgress = upd
-                                }
-                            }
-                        },
+                        onProgress = { upd -> if (!abortBgSync) progressCb(upd) },
                     )
                 }.getOrNull()
+                VeloxNative.trimMemoryIfLoaded()
                 val snap = loadSnapshotBlocking(settingsState.region, reloadDisk = false)
                 withContext(Dispatchers.Main) {
                     engineSnapshot = snap
@@ -300,15 +324,49 @@ class MainActivity : ComponentActivity() {
                     ) {
                         val parts = buildList {
                             if (res.newlyVerified > 0) add("+${res.newlyVerified} новых")
-                            if (res.keptAlive > 0) add("${res.keptAlive} актуальных")
+                            if (res.keptAlive > 0) add("${res.keptAlive} в строю")
                             if (res.removedDead > 0) add("-${res.removedDead} убрано")
                         }
-                        showSnack("Пул готов (${parts.joinToString(", ")}) — мгновенное подключение!")
+                        showSnack("Пул 2× готов (${parts.joinToString(", ")}) — мгновенный старт!")
                     }
                 }
             }
 
-            tgDeferred?.await()
+            // Only refresh Telegram proxies in background on startup if pool is genuinely empty/stale (>3h)
+            val tgAge = (System.currentTimeMillis() / 1000L) - snap0.lastTgRefreshUnix
+            if (!abortBgSync && !isRefreshingTg && (snap0.tgProxies.size < 4 || tgAge > 10_800L)) {
+                maybeLazySyncTgProxies()
+            }
+        }
+    }
+
+    /** Lazy Telegram proxy refresh triggered when user opens the Telegram tab and cache is >45m old. */
+    private fun maybeLazySyncTgProxies() {
+        if (isRefreshingTg) return
+        val nowSec = System.currentTimeMillis() / 1000L
+        val tgAge = nowSec - engineSnapshot.lastTgRefreshUnix
+        if (engineSnapshot.tgProxies.size >= 8 && tgAge < 2700L) return
+        if (!VeloxNative.hasPhysicalInternet(this)) return
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            if (isRefreshingTg) return@launch
+            withContext(Dispatchers.Main) { isRefreshingTg = true }
+            try {
+                VeloxNative.ensureInitialized(this@MainActivity)
+                val maxMs = settingsState.tgMaxRttMs
+                val activeSocks = VeloxPrefs.resolveActiveLocalSocksPort(this@MainActivity)
+                VeloxNative.refreshTgProxies(maxMs, activeSocks)
+                VeloxNative.trimMemoryIfLoaded()
+                val snap = loadSnapshotBlocking(settingsState.region, reloadDisk = false)
+                val st = TgBridgeStatus.fromJsonStr(VeloxNative.getTgStatus())
+                withContext(Dispatchers.Main) {
+                    engineSnapshot = snap
+                    tgStatusState = st
+                }
+            } catch (_: Throwable) {
+            } finally {
+                withContext(Dispatchers.Main) { isRefreshingTg = false }
+            }
         }
     }
 
@@ -341,8 +399,18 @@ class MainActivity : ComponentActivity() {
         if (settingsState.region.equals(newRegion, ignoreCase = true) && settingsState.pinnedNodeId.isEmpty()) {
             return
         }
+        val wasWlRegion = settingsState.region.equals("WL", ignoreCase = true)
+        val isWlRegion = newRegion.equals("WL", ignoreCase = true)
         settingsState = VeloxPrefs.updateSettings(this) {
-            it.copy(region = newRegion, pinnedNodeId = "")
+            it.copy(
+                region = newRegion,
+                pinnedNodeId = "",
+                whitelistMode = when {
+                    isWlRegion -> true
+                    wasWlRegion -> false
+                    else -> it.whitelistMode
+                }
+            )
         }
         refreshEngineSnapshotAsync(reloadDisk = false)
         if (runtimeState.isActiveOrBusy) {
@@ -356,7 +424,10 @@ class MainActivity : ComponentActivity() {
             it.copy(pinnedNodeId = if (unpin) "" else node.id)
         }
         if (unpin) {
-            showSnack("Включён автоматический выбор лучшего узла")
+            showSnack("Включён авто-выбор основного и резервного узла")
+            if (runtimeState.phase == VpnPhase.CONNECTED) {
+                VeloxVpnService.requestHotReload(this)
+            }
         } else {
             startVpnWithConsent(forceRefresh = false)
         }
@@ -366,15 +437,36 @@ class MainActivity : ComponentActivity() {
         transform: (AppSettings) -> AppSettings,
         reconnectIfActive: Boolean,
     ) {
-        val prevWl = settingsState.whitelistMode
-        settingsState = VeloxPrefs.updateSettings(this, transform)
-        if (prevWl != settingsState.whitelistMode) {
-            // Immediately refresh visible server ranking for «Белые списки РФ»!
+        val prev = settingsState
+        val next = VeloxPrefs.updateSettings(this, transform)
+        settingsState = next
+
+        if (prev.sendHwid != next.sendHwid) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                VeloxNative.syncHwidConfig(this@MainActivity, next.sendHwid)
+                val snap = loadSnapshotBlocking(next.region, reloadDisk = false)
+                withContext(Dispatchers.Main) {
+                    engineSnapshot = snap
+                    showSnack(
+                        if (next.sendHwid) "Заголовки Happ X-HWID включены для подписок"
+                        else "Передача X-HWID отключена (приватный режим)"
+                    )
+                }
+            }
+        }
+
+        if (prev.whitelistMode != next.whitelistMode) {
             refreshEngineSnapshotAsync(reloadDisk = false)
         }
+
         if (reconnectIfActive && runtimeState.isActiveOrBusy) {
             cancelBgSyncForUserAction()
-            VeloxVpnService.startConnect(this, forceRefresh = false)
+            if (runtimeState.phase == VpnPhase.CONNECTED && prev.whitelistMode == next.whitelistMode) {
+                // Seamless ~40 ms atomic hot-swap — zero drop on YouTube/DualChannel/Split/Fragment toggles!
+                VeloxVpnService.requestHotReload(this)
+            } else {
+                VeloxVpnService.startConnect(this, forceRefresh = false)
+            }
         }
     }
 
@@ -387,13 +479,13 @@ class MainActivity : ComponentActivity() {
             stageIndex = 1,
             stageTotal = 5,
             percent = 10,
-            etaSeconds = 13,
+            etaSeconds = 12,
             statusLine = if (settingsState.whitelistMode) {
                 "Умное обновление «Белые списки РФ»…"
             } else {
                 "Умное обновление серверов $regLabel…"
             },
-            detailLine = "Рабочие сохраняем + добавляем свежие US/DE/БС-РФ (25 фидов)",
+            detailLine = "Reality · XHTTP · Hysteria2 · Trojan · SS2022 · WG · WARP MASQUE",
         )
 
         if (runtimeState.isActiveOrBusy) {
@@ -402,6 +494,7 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        val progressCb = makeUiProgressCallback()
         lifecycleScope.launch(Dispatchers.IO) {
             var waited = 0
             while (VpnBatchProber.isRunning() && waited < 10) {
@@ -414,12 +507,9 @@ class MainActivity : ComponentActivity() {
                 settings = curSettings,
                 vpnService = null,
                 maxBatch = 44,
-                onProgress = { upd ->
-                    lifecycleScope.launch(Dispatchers.Main) {
-                        manualRefreshProgress = upd
-                    }
-                }
+                onProgress = progressCb,
             )
+            VeloxNative.trimMemoryIfLoaded()
             val snap = loadSnapshotBlocking(curSettings.region, reloadDisk = false)
             withContext(Dispatchers.Main) {
                 engineSnapshot = snap
@@ -430,7 +520,64 @@ class MainActivity : ComponentActivity() {
                         "Обновлено: +${res.newlyVerified} свежих · всего ${snap.deviceVerifiedCount} живых (БС-РФ: ${snap.whitelistVerifiedCount})"
                     )
                 } else {
-                    showSnack(res.error.ifBlank { "Не удалось найти узлы — включите «Белые списки РФ» или добавьте подписку" })
+                    showSnack(res.error.ifBlank { "Не удалось найти узлы — попробуйте «Авто», «Белые списки РФ» или подписку" })
+                }
+            }
+        }
+    }
+
+    private fun handleDiscoverMoreVpn() {
+        cancelBgSyncForUserAction()
+        if (isRefreshingVpn) return
+        if (runtimeState.isActiveOrBusy) {
+            isRefreshingVpn = true
+            vpnRefreshDelegated = true
+            manualRefreshProgress = LiveProgressUpdate(
+                stageIndex = 1,
+                stageTotal = 3,
+                percent = 14,
+                etaSeconds = 13,
+                statusLine = "Поиск дополнительных серверов в фоне…",
+                detailLine = "Без разрыва текущего VPN-туннеля",
+            )
+            VeloxVpnService.requestRefreshPool(this)
+            return
+        }
+        isRefreshingVpn = true
+        manualRefreshProgress = LiveProgressUpdate(
+            stageIndex = 1,
+            stageTotal = 3,
+            percent = 6,
+            etaSeconds = 26,
+            statusLine = "Мульти-поиск серверов (15 стран + 12 протоколов)…",
+            detailLine = "Reality · XHTTP · Hysteria2 · WARP MASQUE · БС-РФ",
+        )
+        val progressCb = makeUiProgressCallback()
+        lifecycleScope.launch(Dispatchers.IO) {
+            var waited = 0
+            while (VpnBatchProber.isRunning() && waited < 12) {
+                delay(200L)
+                waited++
+            }
+            val curSettings = settingsState
+            val res = VpnBatchProber.discoverMoreConnectionsBlocking(
+                context = this@MainActivity,
+                settings = curSettings,
+                onProgress = progressCb,
+            )
+            VeloxNative.trimMemoryIfLoaded()
+            val snap = loadSnapshotBlocking(settingsState.region, reloadDisk = false)
+            withContext(Dispatchers.Main) {
+                engineSnapshot = snap
+                isRefreshingVpn = false
+                manualRefreshProgress = null
+                if (res.ok) {
+                    val countries = snap.allVpnNodes.map { it.exitCountry }.filter { it.isNotBlank() }.distinct().size
+                    showSnack(
+                        "Найдено +${res.newlyVerified} новых · в пуле ${snap.allVpnNodes.size} подключений ($countries стран)!"
+                    )
+                } else {
+                    showSnack(res.error.ifBlank { "Новых серверов не найдено" })
                 }
             }
         }
@@ -445,15 +592,17 @@ class MainActivity : ComponentActivity() {
             while (isActive) {
                 val st = TgBridgeStatus.fromJsonStr(VeloxNative.getTgStatus())
                 withContext(Dispatchers.Main) { tgStatusState = st }
-                delay(250L)
+                delay(320L)
             }
         }
 
         lifecycleScope.launch(Dispatchers.IO) {
             VeloxNative.ensureInitialized(this@MainActivity)
             VeloxNative.logInfo(this@MainActivity, "TG", "Запуск проверки прокси Telegram (порог ≤${maxMs}мс)")
-            val raw = runCatching { VeloxNative.refreshTgProxies(maxMs, 0) }.getOrDefault("{}")
+            val activeSocks = VeloxPrefs.resolveActiveLocalSocksPort(this@MainActivity)
+            val raw = runCatching { VeloxNative.refreshTgProxies(maxMs, activeSocks) }.getOrDefault("{}")
             poller.cancel()
+            VeloxNative.trimMemoryIfLoaded()
             val rawObj = runCatching { JSONObject(raw) }.getOrNull()
             val count = rawObj?.optInt("count", 0) ?: 0
             val added = rawObj?.optInt("newlyAdded", 0) ?: 0
@@ -490,7 +639,7 @@ class MainActivity : ComponentActivity() {
             showSnack("Умный прокси Telegram остановлен")
         }
         lifecycleScope.launch {
-            delay(350L)
+            delay(400L)
             refreshTgStatusAsync()
         }
     }
@@ -499,9 +648,23 @@ class MainActivity : ComponentActivity() {
         if (raw.isBlank() || isBusyImport) return
         cancelBgSyncForUserAction()
         isBusyImport = true
-        showSnack("Загружаю и разбираю подписку / ключ…")
+        val lower = raw.trim().lowercase()
+        showSnack(
+            when {
+                lower.startsWith("happ://crypt") || lower.startsWith("incy://crypt") ->
+                    "Расшифровываю Happ-подписку и загружаю серверы…"
+                lower.startsWith("happ://") || lower.startsWith("v2raytun://") ||
+                    lower.startsWith("hiddify://") || lower.startsWith("clash://") ->
+                    "Импортирую подписку по быстрой ссылке…"
+                else -> "Загружаю и разбираю подписку / ключ…"
+            }
+        )
+        val progressCb = makeUiProgressCallback()
         lifecycleScope.launch(Dispatchers.IO) {
             VeloxNative.reloadFromDisk(this@MainActivity)
+            VeloxNative.syncHwidConfig(this@MainActivity, settingsState.sendHwid)
+            // Load active authenticated 127.0.0.1:10808 creds if VPN is CONNECTED so blocked panel URLs import seamlessly
+            val _activeSocks = VeloxPrefs.resolveActiveLocalSocksPort(this@MainActivity)
             val resRaw = runCatching {
                 VeloxNative.addCustomItem(raw, kindHint, settingsState.tgMaxRttMs)
             }.getOrElse { e -> """{"ok":false,"error":"${e.message}"}""" }
@@ -522,8 +685,6 @@ class MainActivity : ComponentActivity() {
                 showSnack(msg)
             }
 
-            // Immediately run real Xray verification on imported subscription/keys so live RTT &
-            // speed appear right in the server list and user can tap any server to connect in 0.1s!
             if (needsProbe && !runtimeState.isActiveOrBusy) {
                 var waited = 0
                 while (VpnBatchProber.isRunning() && waited < 12) {
@@ -536,26 +697,23 @@ class MainActivity : ComponentActivity() {
                         stageIndex = 1,
                         stageTotal = 3,
                         percent = 20,
-                        etaSeconds = 6,
+                        etaSeconds = 5,
                         statusLine = if (subName.isNotBlank()) {
                             "Проверка «$subName» ($importedCount серв.)…"
                         } else {
                             "Проверка импортированных серверов…"
                         },
-                        detailLine = "Замер отклика, скорости и Белых списков РФ",
+                        detailLine = "Замер отклика, скорости, YT 0% и Белых списков РФ",
                     )
                 }
                 val probeRes = runCatching {
                     VpnBatchProber.verifyCustomSubBlocking(
                         context = this@MainActivity,
                         settings = settingsState,
-                        onProgress = { upd ->
-                            lifecycleScope.launch(Dispatchers.Main) {
-                                manualRefreshProgress = upd
-                            }
-                        },
+                        onProgress = progressCb,
                     )
                 }.getOrNull()
+                VeloxNative.trimMemoryIfLoaded()
                 val snap2 = loadSnapshotBlocking(settingsState.region, reloadDisk = false)
                 withContext(Dispatchers.Main) {
                     engineSnapshot = snap2
@@ -579,13 +737,10 @@ class MainActivity : ComponentActivity() {
         showSnack("Обновляю подписку…")
         lifecycleScope.launch(Dispatchers.IO) {
             VeloxNative.reloadFromDisk(this@MainActivity)
-            val socks = if (runtimeState.phase == app.velox.vpn.core.VpnPhase.CONNECTED) {
-                VeloxPrefs.LOCAL_VPN_SOCKS_PORT
-            } else {
-                0
-            }
+            VeloxNative.syncHwidConfig(this@MainActivity, settingsState.sendHwid)
+            val activeSocks = VeloxPrefs.resolveActiveLocalSocksPort(this@MainActivity)
             val resRaw = runCatching {
-                VeloxNative.syncSubscription(url, settingsState.tgMaxRttMs, socks)
+                VeloxNative.syncSubscription(url, settingsState.tgMaxRttMs, activeSocks)
             }.getOrElse { e -> """{"ok":false,"error":"${e.message}"}""" }
             val obj = runCatching { JSONObject(resRaw) }.getOrDefault(JSONObject())
             val ok = obj.optBoolean("ok", false)
@@ -608,6 +763,7 @@ class MainActivity : ComponentActivity() {
                 val res = runCatching {
                     VpnBatchProber.verifyCustomSubBlocking(this@MainActivity, settingsState)
                 }.getOrNull()
+                VeloxNative.trimMemoryIfLoaded()
                 val snap2 = loadSnapshotBlocking(settingsState.region, reloadDisk = false)
                 withContext(Dispatchers.Main) {
                     engineSnapshot = snap2
@@ -651,7 +807,8 @@ class MainActivity : ComponentActivity() {
         isBusyWarp = true
         lifecycleScope.launch(Dispatchers.IO) {
             VeloxNative.reloadFromDisk(this@MainActivity)
-            val raw = VeloxNative.regenerateWarp(0)
+            val activeSocks = VeloxPrefs.resolveActiveLocalSocksPort(this@MainActivity)
+            val raw = VeloxNative.regenerateWarp(activeSocks)
             val obj = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
             val ok = obj.optBoolean("ok", false)
             val snap = loadSnapshotBlocking(settingsState.region, reloadDisk = false)
@@ -703,36 +860,44 @@ class MainActivity : ComponentActivity() {
         val r = runtimeState
         val abis = Build.SUPPORTED_ABIS.joinToString(",")
         val header = buildString {
-            appendLine("=== VeloxVPN 1.2.0 Diagnostic Log ===")
+            appendLine("=== VeloxVPN 1.6.0 Diagnostic Log ===")
             appendLine("Устройство: ${Build.MANUFACTURER} ${Build.MODEL} | Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}) | ABI: $abis")
             appendLine("Сеть: ${VeloxNative.describeActiveNetwork(this@MainActivity)}")
             appendLine(
-                "Настройки: region=${s.region} WL=${s.whitelistMode} frag=${s.fragmentTls} " +
-                    "bypassRU=${s.bypassRu} autoHeal=${s.autoHeal} profile=${s.profileMode.code} excluded=${s.excludedPackages.size}"
+                "Настройки: region=${s.region} dual2x=${s.dualChannel} hwid=${s.sendHwid} WL=${s.whitelistMode} " +
+                    "frag=${s.fragmentTls} bypassRU=${s.bypassRu} autoHeal=${s.autoHeal} profile=${s.profileMode.code} excluded=${s.excludedPackages.size}"
             )
             appendLine(
-                "Состояние: phase=${r.phase} node=${r.activeNodeName.ifBlank { "-" }} " +
-                    "verified=${engineSnapshot.deviceVerifiedCount}/${engineSnapshot.allVpnNodes.size} " +
-                    "opera=${engineSnapshot.operaCount} warp=${engineSnapshot.hasWarpWg}/${engineSnapshot.hasWarpMasque} tg=${engineSnapshot.tgProxies.size}"
+                "Состояние: phase=${r.phase} #1=${r.activeNodeName.ifBlank { "-" }} #2=${r.standbyNodeName.ifBlank { "-" }} " +
+                    "failovers=${r.failoverCount} verified=${engineSnapshot.deviceVerifiedCount}/${engineSnapshot.allVpnNodes.size} " +
+                    "warp=${engineSnapshot.hasWarpWg}/${engineSnapshot.hasWarpMasque} tg=${engineSnapshot.tgProxies.size}"
             )
             appendLine("-------------------------------------")
         }
         return header + lines.joinToString("\n")
     }
 
+    private fun openExternalUrlSafe(url: String) {
+        val clean = url.trim()
+        if (!clean.startsWith("https://") && !clean.startsWith("tg://")) return
+        val ok = runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(clean)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        }.getOrDefault(false)
+        if (!ok) {
+            copyToClipboard(clean, "Ссылка скопирована в буфер обмена")
+        }
+    }
+
     private fun openTelegramProxyLink(tgUri: String, fallbackHttps: String) {
         val openedTg = runCatching {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(tgUri))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(intent)
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(tgUri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             true
         }.getOrDefault(false)
 
         if (!openedTg) {
             val openedWeb = runCatching {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(fallbackHttps))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(intent)
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(fallbackHttps)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 true
             }.getOrDefault(false)
 
@@ -829,10 +994,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun refreshEngineSnapshotAsync(reloadDisk: Boolean) {
+    private fun refreshEngineSnapshotAsync(reloadDisk: Boolean, syncHwid: Boolean = false) {
         lifecycleScope.launch(Dispatchers.IO) {
-            val reg = settingsState.region
-            val snap = loadSnapshotBlocking(reg, reloadDisk)
+            val cur = settingsState
+            if (syncHwid) {
+                VeloxNative.syncHwidConfig(this@MainActivity, cur.sendHwid)
+            }
+            val snap = loadSnapshotBlocking(cur.region, reloadDisk)
             val tg = TgBridgeStatus.fromJsonStr(VeloxNative.getTgStatus())
             withContext(Dispatchers.Main) {
                 engineSnapshot = snap
@@ -851,6 +1019,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Compact JNI snapshot: omits `outbound_json`, `raw_uri`, and log ring unless logs sheet is opened! */
     private fun loadSnapshotBlocking(region: String, reloadDisk: Boolean): EngineSnapshot {
         if (reloadDisk) {
             VeloxNative.reloadFromDisk(this)
@@ -858,7 +1027,7 @@ class MainActivity : ComponentActivity() {
             VeloxNative.ensureInitialized(this)
         }
         return EngineSnapshot.parse(
-            VeloxNative.getStateSnapshot(region, settingsState.whitelistMode)
+            VeloxNative.getStateSnapshotEx(region, settingsState.whitelistMode, false)
         )
     }
 

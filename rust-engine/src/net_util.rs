@@ -86,9 +86,92 @@ pub static TLS_CONFIG_MASKED_SNI: Lazy<Arc<ClientConfig>> = Lazy::new(|| {
     Arc::new(cfg)
 });
 
-/// In-memory TTL DNS cache to avoid redundant DoH lookups.
+/// Bounded in-memory TTL DNS cache (auto-pruned at 512 entries + flushed on `prune_network_caches`).
 static DNS_CACHE: Lazy<RwLock<HashMap<String, (Vec<IpAddr>, Instant)>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
+
+/// Singleflight DNS coalescer: prevents 20 concurrent tasks from firing 20 duplicate DoH handshakes!
+static DNS_INFLIGHT: Lazy<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Notify>>>> =
+    Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
+
+/// Sticky index of the fastest responsive DoH resolver on the user's current ISP.
+static FASTEST_DOH_IDX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Bounded ETag / Last-Modified cache for public feed URLs (`304 Not Modified` = 0 KB mobile data!).
+struct CachedFeedEntry {
+    etag: String,
+    last_modified: String,
+    body: String,
+    stored_at: Instant,
+}
+static FEED_HTTP_CACHE: Lazy<RwLock<HashMap<String, CachedFeedEntry>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+/// Ephemeral per-session credentials for our locked loopback SOCKS5 port (`127.0.0.1:10808`).
+static LOCAL_SOCKS_AUTH: Lazy<RwLock<Option<(u16, String, String)>>> =
+    Lazy::new(|| RwLock::new(None));
+
+pub fn set_local_socks_auth(port: u16, user: &str, pass: &str) {
+    if let Ok(mut g) = LOCAL_SOCKS_AUTH.write() {
+        if port > 0 && !user.is_empty() && !pass.is_empty() {
+            *g = Some((port, user.to_string(), pass.to_string()));
+        } else {
+            *g = None;
+        }
+    }
+}
+
+pub fn local_socks_auth_for(addr: SocketAddr) -> Option<(String, String)> {
+    if !addr.ip().is_loopback() {
+        return None;
+    }
+    LOCAL_SOCKS_AUTH
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().filter(|(p, _, _)| *p == addr.port()).map(|(_, u, p)| (u.clone(), p.clone())))
+}
+
+pub fn active_local_socks_port() -> u16 {
+    LOCAL_SOCKS_AUTH
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|(p, _, _)| *p))
+        .unwrap_or(0)
+}
+
+/// Free all transient DNS and HTTP ETag caches (called when `:vpn` enters steady tunnel mode or UI trims memory).
+pub fn prune_network_caches(aggressive: bool) {
+    if let Ok(mut d) = DNS_CACHE.write() {
+        if aggressive {
+            d.clear();
+            d.shrink_to_fit();
+        } else {
+            d.retain(|_, (_, ts)| ts.elapsed() < Duration::from_secs(300));
+            d.shrink_to_fit();
+        }
+    }
+    if let Ok(mut f) = FEED_HTTP_CACHE.write() {
+        if aggressive {
+            f.clear();
+            f.shrink_to_fit();
+        } else {
+            f.retain(|_, e| e.stored_at.elapsed() < Duration::from_secs(1800));
+            f.shrink_to_fit();
+        }
+    }
+}
+
+fn cache_dns_entry(key: String, ips: Vec<IpAddr>) {
+    if let Ok(mut cache) = DNS_CACHE.write() {
+        if cache.len() >= 512 {
+            cache.retain(|_, (_, ts)| ts.elapsed() < Duration::from_secs(300));
+            if cache.len() >= 512 {
+                cache.clear();
+            }
+        }
+        cache.insert(key, (ips, Instant::now()));
+    }
+}
 
 /// Wraps a `TcpStream` and splits the very first TLS ClientHello record (`0x16 0x03 0x01/0x03 len`)
 /// into multiple valid, small TLS handshake records flushed separately over `TCP_NODELAY`.
@@ -257,9 +340,48 @@ pub async fn resolve_host_resilient(host: &str) -> Result<Vec<IpAddr>, String> {
         }
     }
 
-    // Try anti-spoof DoH JSON over literal IPs in RF-optimal order:
-    // Google (8.8.8.8) -> Quad9 (9.9.9.9) -> Yandex DoH (77.88.8.8, works under RF mobile
-    // whitelists; skipped for domains filtered in RF) -> Google secondary -> Cloudflare.
+    // Singleflight deduplication: if another task is already resolving `key`, wait for it instead
+    // of opening a second TLS DoH socket to 8.8.8.8 / 9.9.9.9!
+    let my_notify = {
+        let existing = DNS_INFLIGHT
+            .lock()
+            .ok()
+            .and_then(|m| m.get(&key).cloned());
+        if let Some(wait_on) = existing {
+            let _ = timeout(Duration::from_millis(2400), wait_on.notified()).await;
+            if let Ok(cache) = DNS_CACHE.read() {
+                if let Some((ips, ts)) = cache.get(&key) {
+                    if ts.elapsed() < Duration::from_secs(300) && !ips.is_empty() {
+                        return Ok(ips.clone());
+                    }
+                }
+            }
+        }
+        let n = Arc::new(tokio::sync::Notify::new());
+        if let Ok(mut m) = DNS_INFLIGHT.lock() {
+            m.insert(key.clone(), n.clone());
+        }
+        n
+    };
+
+    struct InflightGuard {
+        key: String,
+        notify: Arc<tokio::sync::Notify>,
+    }
+    impl Drop for InflightGuard {
+        fn drop(&mut self) {
+            if let Ok(mut m) = DNS_INFLIGHT.lock() {
+                m.remove(&self.key);
+            }
+            self.notify.notify_waiters();
+        }
+    }
+    let _guard = InflightGuard {
+        key: key.clone(),
+        notify: my_notify,
+    };
+
+    // Try anti-spoof DoH JSON over literal IPs starting with the sticky fastest resolver!
     let skip_ru_doh = key.contains("cloudflare")
         || key.contains("sec-tunnel")
         || key.contains("opera")
@@ -277,7 +399,10 @@ pub async fn resolve_host_resilient(host: &str) -> Result<Vec<IpAddr>, String> {
         (Ipv4Addr::new(1, 1, 1, 1), "cloudflare-dns.com", "/dns-query", false),
     ];
 
-    for (ip, sni, path, is_ru_resolver) in doh_targets {
+    let start_idx = FASTEST_DOH_IDX.load(std::sync::atomic::Ordering::Relaxed) % doh_targets.len();
+    for step in 0..doh_targets.len() {
+        let idx = (start_idx + step) % doh_targets.len();
+        let (ip, sni, path, is_ru_resolver) = &doh_targets[idx];
         if *is_ru_resolver && skip_ru_doh {
             continue;
         }
@@ -295,9 +420,10 @@ pub async fn resolve_host_resilient(host: &str) -> Result<Vec<IpAddr>, String> {
                 IpAddr::V6(v6) => !v6.is_loopback() && !v6.is_unspecified(),
             });
             if !ips.is_empty() {
-                if let Ok(mut cache) = DNS_CACHE.write() {
-                    cache.insert(key, (ips.clone(), Instant::now()));
+                if !*is_ru_resolver {
+                    FASTEST_DOH_IDX.store(idx, std::sync::atomic::Ordering::Relaxed);
                 }
+                cache_dns_entry(key, ips.clone());
                 return Ok(ips);
             }
         }
@@ -312,7 +438,6 @@ pub async fn resolve_host_resilient(host: &str) -> Result<Vec<IpAddr>, String> {
     {
         let mut ips: Vec<IpAddr> = iter.map(|sa| sa.ip()).collect();
         ips.dedup();
-        // Filter RFC1918/loopback/CGNAT/link-local spoofed responses for public domains
         ips.retain(|ip| match ip {
             IpAddr::V4(v4) => {
                 let o = v4.octets();
@@ -327,9 +452,7 @@ pub async fn resolve_host_resilient(host: &str) -> Result<Vec<IpAddr>, String> {
             IpAddr::V6(v6) => !v6.is_loopback() && !v6.is_unspecified(),
         });
         if !ips.is_empty() {
-            if let Ok(mut cache) = DNS_CACHE.write() {
-                cache.insert(key, (ips.clone(), Instant::now()));
-            }
+            cache_dns_entry(key, ips.clone());
             return Ok(ips);
         }
     }
@@ -570,24 +693,9 @@ pub async fn socks5_connect(
     Ok(stream)
 }
 
-/// Execute an HTTP/1.1 or HTTPS/1.1 request (following up to 4 redirects on GET).
+/// Execute an HTTP/1.1 or HTTPS/1.1 request with hardened redirect safety (SSRF/downgrade/header protection).
 pub async fn http_request(url_str: &str, opts: &HttpRequestOptions) -> Result<HttpResponse, String> {
-    let mut current = url_str.to_string();
-    for hop in 0..5 {
-        let resp = http_request_once(&current, opts).await?;
-        if matches!(resp.status, 301 | 302 | 303 | 307 | 308) && opts.method == "GET" && hop < 4 {
-            if let Some(loc) = resp.header("location") {
-                if let Ok(base) = Url::parse(&current) {
-                    if let Ok(next) = base.join(loc.trim()) {
-                        current = next.to_string();
-                        continue;
-                    }
-                }
-            }
-        }
-        return Ok(resp);
-    }
-    Err("too many redirects".to_string())
+    http_request_follow_6(url_str, opts).await
 }
 
 pub async fn http_request_once(
@@ -607,7 +715,9 @@ pub async fn http_request_once(
 
     let start = Instant::now();
     let tcp = if let Some(proxy) = opts.socks5_proxy {
-        socks5_connect(proxy, None, &host, port, opts.timeout).await?
+        let sess_auth = local_socks_auth_for(proxy);
+        let auth_ref = sess_auth.as_ref().map(|(u, p)| (u.as_str(), p.as_str()));
+        socks5_connect(proxy, auth_ref, &host, port, opts.timeout).await?
     } else if let Some(ip) = opts.fixed_ip {
         timeout(opts.timeout, TcpStream::connect(SocketAddr::new(ip, port)))
             .await
@@ -646,10 +756,17 @@ pub async fn http_request_once(
         format!("{host}:{port}")
     };
 
+    let has_custom_ae = opts
+        .headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("accept-encoding"));
     let mut raw_req = format!(
-        "{} {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nAccept-Encoding: identity\r\n",
+        "{} {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n",
         opts.method, path_and_query, host_header
     );
+    if !has_custom_ae {
+        raw_req.push_str("Accept-Encoding: identity\r\n");
+    }
     let mut has_ua = false;
     for (k, v) in &opts.headers {
         if k.eq_ignore_ascii_case("user-agent") {
@@ -829,10 +946,25 @@ pub async fn read_http_response<S: AsyncRead + Unpin>(
         }
     }
 
-    let body = if is_chunked {
+    let raw_body = if is_chunked {
         decode_chunked(&body_raw, max_bytes)
     } else {
         body_raw
+    };
+
+    // Transparent bounded pure-Rust gzip/deflate decompression (65-80% less feed data on LTE
+    // + seamless support for Remnawave/Marzban/Happ panels returning gzip payloads!)
+    let content_enc = headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("content-encoding"))
+        .map(|(_, v)| v.trim().to_ascii_lowercase())
+        .unwrap_or_default();
+    let body = if !raw_body.is_empty() && content_enc.contains("gzip") {
+        decompress_bounded_gzip(&raw_body, max_bytes).unwrap_or(raw_body)
+    } else if !raw_body.is_empty() && content_enc.contains("deflate") {
+        decompress_bounded_deflate(&raw_body, max_bytes).unwrap_or(raw_body)
+    } else {
+        raw_body
     };
 
     Ok(HttpResponse {
@@ -840,6 +972,33 @@ pub async fn read_http_response<S: AsyncRead + Unpin>(
         headers,
         body,
     })
+}
+
+fn decompress_bounded_gzip(input: &[u8], max_bytes: usize) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let dec = flate2::read::GzDecoder::new(input);
+    let mut out = Vec::with_capacity(input.len().saturating_mul(2).min(max_bytes).min(256 * 1024));
+    dec.take(max_bytes as u64).read_to_end(&mut out).ok()?;
+    Some(out)
+}
+
+fn decompress_bounded_deflate(input: &[u8], max_bytes: usize) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut out = Vec::with_capacity(input.len().saturating_mul(2).min(max_bytes).min(256 * 1024));
+    if flate2::read::ZlibDecoder::new(input)
+        .take(max_bytes as u64)
+        .read_to_end(&mut out)
+        .is_ok()
+        && !out.is_empty()
+    {
+        return Some(out);
+    }
+    out.clear();
+    flate2::read::DeflateDecoder::new(input)
+        .take(max_bytes as u64)
+        .read_to_end(&mut out)
+        .ok()?;
+    Some(out)
 }
 
 fn decode_chunked(input: &[u8], max_bytes: usize) -> Vec<u8> {
@@ -917,14 +1076,18 @@ pub fn expand_mirror_urls(url: &str) -> Vec<String> {
         .collect()
 }
 
-/// Decoded custom subscription fetch output (Remnawave, Shuka, Marzban, Happ, 3x-ui, Hiddify,
-/// PasarGuard, Outline, V2Board, raw GitHub/Codeberg).
+/// Decoded custom subscription fetch output (Happ crypt1..5 & AES-128-GCM body, Incy crypt1,
+/// Remnawave, Shuka, Marzban, 3x-ui, Hiddify, PasarGuard, Outline, V2Board, raw GitHub/Codeberg).
 #[derive(Debug, Clone, Default)]
 pub struct SubscriptionFetchResult {
     pub body: String,
+    pub raw_bytes: Vec<u8>,
+    pub headers: Vec<(String, String)>,
     pub profile_title: String,
     pub userinfo: String,
     pub via_tag: String,
+    pub migrated_url: String,
+    pub envelope: crate::happ_compat::ParsedSubscriptionEnvelope,
 }
 
 fn looks_like_html_portal(body: &str) -> bool {
@@ -942,9 +1105,28 @@ fn looks_like_html_portal(body: &str) -> bool {
         && !body.contains("\ntg://proxy")
 }
 
-/// Extract embedded subscription URL from an HTML portal page (e.g. `happ://add/https://...`,
-/// `v2raytun://import/https://...`, `sing-box://import-remote-profile?url=...`).
+/// Extract embedded subscription URL from an HTML portal page — including `happ://crypt5/...`,
+/// `happ://crypt4/...`, `happ://add/...`, `incy://crypt1/...`, `v2raytun://import/...`!
 fn extract_sub_url_from_html(html: &str) -> Option<String> {
+    for full_scheme in [
+        "happ://crypt5/",
+        "happ://crypt4/",
+        "happ://crypt3/",
+        "happ://crypt2/",
+        "happ://crypt/",
+        "incy://crypt1/",
+    ] {
+        if let Some(idx) = html.find(full_scheme) {
+            let after = &html[idx..];
+            let end = after
+                .find(|c: char| matches!(c, '"' | '\'' | '<' | '>' | ' ' | '\r' | '\n'))
+                .unwrap_or(after.len());
+            let crypt_link = after[..end].trim();
+            if let Some(Ok(unw)) = crate::happ_compat::unwrap_or_decrypt_subscription(crypt_link) {
+                return Some(unw.fetch_url);
+            }
+        }
+    }
     for marker in [
         "happ://add/",
         "v2raytun://import/",
@@ -962,6 +1144,11 @@ fn extract_sub_url_from_html(html: &str) -> Option<String> {
                 .to_string();
             if cand.starts_with("https://") || cand.starts_with("http://") {
                 return Some(cand);
+            }
+            if cand.to_ascii_lowercase().starts_with("happ://crypt") {
+                if let Some(Ok(unw)) = crate::happ_compat::unwrap_or_decrypt_subscription(&cand) {
+                    return Some(unw.fetch_url);
+                }
             }
         }
     }
@@ -1060,15 +1247,150 @@ fn format_subscription_userinfo(resp: &HttpResponse) -> String {
     parts.join(" · ")
 }
 
+fn is_safe_public_v4(v4: Ipv4Addr) -> bool {
+    let o = v4.octets();
+    !v4.is_private()
+        && !v4.is_loopback()
+        && !v4.is_link_local()
+        && !v4.is_unspecified()
+        && !v4.is_broadcast()
+        && o[0] != 0
+        && o[0] < 224
+        && !(o[0] == 100 && (64..=127).contains(&o[1]))
+}
+
+pub fn is_safe_redirect_host(host: &str) -> bool {
+    let h = host.trim().trim_matches(|c| c == '[' || c == ']').to_ascii_lowercase();
+    if h.is_empty()
+        || h == "localhost"
+        || h.ends_with(".local")
+        || h.ends_with(".internal")
+        || h.ends_with(".localhost")
+    {
+        return false;
+    }
+    if let Ok(ip) = h.parse::<IpAddr>() {
+        return match ip {
+            IpAddr::V4(v4) => is_safe_public_v4(v4),
+            IpAddr::V6(v6) => {
+                if let Some(mapped) = v6.to_ipv4_mapped() {
+                    return is_safe_public_v4(mapped);
+                }
+                let s0 = v6.segments()[0];
+                let is_ula = (s0 & 0xfe00) == 0xfc00;        // fc00::/7
+                let is_link_local = (s0 & 0xffc0) == 0xfe80; // fe80::/10
+                !v6.is_loopback()
+                    && !v6.is_unspecified()
+                    && !v6.is_multicast()
+                    && !is_ula
+                    && !is_link_local
+            }
+        };
+    }
+    true
+}
+
+/// Hardened redirect follower (v1.6.0):
+/// - Blocks `https:// -> http://` downgrade & SSRF to loopback/private/link-local hosts
+/// - Strips `Authorization`, `Cookie` & `X-HWID`/`X-Device-*` on cross-origin redirects
+/// - Clears `fixed_ip` & `sni_override` on host change
+/// - Transparently decrypts `302 Location: happ://crypt5/...` / `happ://add/...` panel redirects!
 async fn http_request_follow_6(url_str: &str, opts: &HttpRequestOptions) -> Result<HttpResponse, String> {
     let mut current = url_str.to_string();
+    let mut cur_opts = opts.clone();
     for hop in 0..7 {
-        let resp = http_request_once(&current, opts).await?;
-        if matches!(resp.status, 301 | 302 | 303 | 307 | 308) && opts.method == "GET" && hop < 6 {
-            if let Some(loc) = resp.header("location") {
+        let resp = http_request_once(&current, &cur_opts).await?;
+        if matches!(resp.status, 301 | 302 | 303 | 307 | 308) && cur_opts.method == "GET" && hop < 6 {
+            if let Some(loc_raw) = resp.header("location") {
+                let loc = loc_raw.trim();
+                // Handle panels redirecting directly to `happ://crypt5/...` or `incy://crypt1/...`!
+                if loc.to_ascii_lowercase().starts_with("happ://")
+                    || loc.to_ascii_lowercase().starts_with("incy://")
+                {
+                    if let Some(Ok(unw)) = crate::happ_compat::unwrap_or_decrypt_subscription(loc) {
+                        if let Ok(next_u) = Url::parse(&unw.fetch_url) {
+                            if matches!(next_u.scheme(), "https" | "http")
+                                && next_u.host_str().is_some_and(is_safe_redirect_host)
+                            {
+                                cur_opts.fixed_ip = None;
+                                cur_opts.sni_override = None;
+                                current = unw.fetch_url;
+                                continue;
+                            }
+                        }
+                    }
+                    return Err("небезопасный happ:// редирект".to_string());
+                }
                 if let Ok(base) = Url::parse(&current) {
-                    if let Ok(next) = base.join(loc.trim()) {
+                    if let Ok(next) = base.join(loc) {
+                        // Block HTTPS -> HTTP downgrade
+                        if base.scheme() == "https" && next.scheme() != "https" {
+                            return Err("заблокирован небезопасный редирект https->http".to_string());
+                        }
+                        if !matches!(next.scheme(), "https" | "http") {
+                            return Err("неподдерживаемая схема редиректа".to_string());
+                        }
+                        let Some(next_host) = next.host_str() else {
+                            return Err("пустой хост в редиректе".to_string());
+                        };
+                        if !is_safe_redirect_host(next_host) {
+                            return Err("заблокирован редирект на локальный адрес".to_string());
+                        }
+                        let cross_origin = base.scheme() != next.scheme()
+                            || base.host_str() != next.host_str()
+                            || base.port_or_known_default() != next.port_or_known_default();
+                        if cross_origin {
+                            cur_opts.fixed_ip = None;
+                            cur_opts.sni_override = None;
+                            cur_opts.headers.retain(|(k, _)| {
+                                let kl = k.to_ascii_lowercase();
+                                kl != "authorization"
+                                    && kl != "cookie"
+                                    && kl != "proxy-authorization"
+                                    && !kl.starts_with("x-hwid")
+                                    && !kl.starts_with("x-device")
+                            });
+                        }
                         current = next.to_string();
+                        continue;
+                    }
+                }
+            }
+        }
+        // Happ `change-user-agent` response directive (one-shot retry with server-requested UA)
+        if let Some(new_ua) = resp
+            .header("change-user-agent")
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty() && s.len() <= 96 && !s.chars().any(|c| c.is_control()))
+        {
+            let already = cur_opts
+                .headers
+                .iter()
+                .any(|(k, v)| k.eq_ignore_ascii_case("user-agent") && v == new_ua);
+            if !already && hop < 5 {
+                cur_opts
+                    .headers
+                    .retain(|(k, _)| !k.eq_ignore_ascii_case("user-agent"));
+                cur_opts
+                    .headers
+                    .insert(0, ("User-Agent".into(), new_ua.to_string()));
+                continue;
+            }
+        }
+        // Happ `new-url` / `fallback-url` response header migration (when body is empty or error)
+        if (resp.status >= 400 || resp.body.is_empty()) && hop < 5 {
+            if let Some(migrated) = resp
+                .header("new-url")
+                .or_else(|| resp.header("fallback-url"))
+                .or_else(|| resp.header("check-url-via-proxy"))
+                .map(|s| s.trim())
+                .filter(|s| s.starts_with("https://"))
+            {
+                if let Ok(next_u) = Url::parse(migrated) {
+                    if next_u.host_str().is_some_and(is_safe_redirect_host) && migrated != current {
+                        cur_opts.fixed_ip = None;
+                        cur_opts.sni_override = None;
+                        current = migrated.to_string();
                         continue;
                     }
                 }
@@ -1088,57 +1410,188 @@ pub async fn fetch_subscription_smart(
     socks5_proxy: Option<SocketAddr>,
     max_bytes: usize,
 ) -> Result<SubscriptionFetchResult, String> {
-    const CLIENT_UAS: &[(&str, &str)] = &[
-        ("v2rayNG/1.9.30", "v2rayNG"),
-        ("Happ/2.6.0/Android", "Happ"),
-        ("SFA/1.11.4 (Android)", "sing-box"),
+    let def_hwid = crate::happ_compat::HwidIdentityConfig::default();
+    fetch_subscription_smart_ex(url, url, "", false, false, &def_hwid, socks5_proxy, max_bytes)
+        .await
+}
+
+/// Full Happ 4.11+ / Remnawave / Marzban / 3x-ui subscription fetcher:
+/// - Supports `Happ/<ver>/Android` wire-order headers + optional `X-HWID` device identity
+/// - Transparent gzip/deflate decompression + offline AES-128-GCM body decryption (`happ_sub`)
+/// - Cascades active VPN tunnel -> direct+TLS-fragment -> direct so blocked panel domains update seamlessly!
+#[allow(clippy::too_many_arguments)]
+pub async fn fetch_subscription_smart_ex(
+    full_url: &str,
+    fetch_url: &str,
+    encrypted_kind: &str,
+    was_body_encrypted: bool,
+    prefer_happ_ua: bool,
+    hwid_cfg: &crate::happ_compat::HwidIdentityConfig,
+    socks5_proxy: Option<SocketAddr>,
+    max_bytes: usize,
+) -> Result<SubscriptionFetchResult, String> {
+    let now_unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(1_763_000_000);
+
+    let happ_hdrs = crate::happ_compat::build_happ_headers(hwid_cfg, now_unix);
+    let mut profiles: Vec<(&str, Vec<(String, String)>)> = Vec::with_capacity(3);
+    let mut happ_full = happ_hdrs;
+    happ_full.push(("Accept".into(), "*/*".into()));
+    happ_full.push(("Accept-Encoding".into(), "gzip, deflate".into()));
+
+    let v2rayng_hdrs = vec![
+        ("User-Agent".into(), "v2rayNG/1.9.30".into()),
+        ("Accept".into(), "*/*".into()),
+        ("Accept-Encoding".into(), "gzip, deflate".into()),
     ];
+    let sfa_hdrs = vec![
+        ("User-Agent".into(), "SFA/1.11.4 (Android)".into()),
+        ("Accept".into(), "*/*".into()),
+        ("Accept-Encoding".into(), "gzip, deflate".into()),
+    ];
+
+    if prefer_happ_ua || hwid_cfg.enabled || !encrypted_kind.is_empty() || was_body_encrypted {
+        profiles.push(("Happ", happ_full));
+        profiles.push(("v2rayNG", v2rayng_hdrs));
+        profiles.push(("sing-box", sfa_hdrs));
+    } else {
+        profiles.push(("v2rayNG", v2rayng_hdrs));
+        profiles.push(("Happ", happ_full));
+        profiles.push(("sing-box", sfa_hdrs));
+    }
 
     let mut last_err = String::from("нет ответа");
     let mut html_fallback_url: Option<String> = None;
 
-    // Build transport modes: tunnel first (if active), then direct+TLS-fragment, then direct plain
-    let mut modes: Vec<(Option<SocketAddr>, bool, &str)> = Vec::new();
+    // Transport cascade: active VPN tunnel first (defeats ISP panel blocks!), then direct+frag, then direct
+    let mut modes: Vec<(Option<SocketAddr>, bool, &str)> = Vec::with_capacity(3);
     if let Some(p) = socks5_proxy {
         modes.push((Some(p), false, "tunnel"));
     }
     modes.push((None, true, "direct+frag"));
     modes.push((None, false, "direct"));
 
-    for (ua, ua_tag) in CLIENT_UAS {
+    let pack_ok = |r: HttpResponse, full_u: &str, via: String| -> SubscriptionFetchResult {
+        let env = crate::happ_compat::parse_subscription_envelope(
+            full_u,
+            &r.headers,
+            &r.body,
+            was_body_encrypted,
+            encrypted_kind,
+            now_unix,
+        );
+        let title = if !env.title.is_empty() {
+            env.title.clone()
+        } else {
+            decode_profile_title_header(&r)
+        };
+        let uinfo = if !env.userinfo_summary.is_empty() {
+            env.userinfo_summary.clone()
+        } else {
+            format_subscription_userinfo(&r)
+        };
+        let body = if !env.share_links.is_empty() {
+            env.share_links.join("\n")
+        } else {
+            r.text()
+        };
+        let mut migrated = String::new();
+        if let Some(nu) = r.header("new-url").map(str::trim).filter(|s| s.starts_with("https://")) {
+            if let Ok(parsed_nu) = Url::parse(nu) {
+                if parsed_nu.host_str().is_some_and(is_safe_redirect_host) {
+                    migrated = nu.to_string();
+                }
+            }
+        }
+        SubscriptionFetchResult {
+            body,
+            raw_bytes: r.body,
+            headers: r.headers,
+            profile_title: title,
+            userinfo: uinfo,
+            via_tag: via,
+            migrated_url: migrated,
+            envelope: env,
+        }
+    };
+
+    for (ua_tag, req_headers) in &profiles {
         for (proxy, frag, net_tag) in &modes {
             let opts = HttpRequestOptions {
-                timeout: Duration::from_millis(7500),
+                timeout: Duration::from_millis(7000),
                 max_bytes,
                 fragment_tls: *frag,
                 socks5_proxy: *proxy,
-                headers: vec![
-                    ("User-Agent".into(), (*ua).to_string()),
-                    ("Accept".into(), "*/*".into()),
-                ],
+                headers: req_headers.clone(),
                 ..Default::default()
             };
-            match http_request_follow_6(url, &opts).await {
+            match http_request_follow_6(fetch_url, &opts).await {
                 Ok(r) if r.status == 200 && !r.body.is_empty() => {
-                    let body = r.text();
-                    if looks_like_html_portal(&body) {
+                    // Check HWID rejection headers explicitly even on HTTP 200
+                    let hwid_lim = r
+                        .header("x-hwid-limit")
+                        .or_else(|| r.header("x-hwid-max-devices-reached"))
+                        .is_some_and(|v| v.trim().eq_ignore_ascii_case("true"));
+                    if hwid_lim {
+                        let sup = r.header("support-url").unwrap_or("");
+                        let sfx = if sup.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" (поддержка: {sup})")
+                        };
+                        return Err(format!(
+                            "Достигнут лимит устройств по подписке (HWID){sfx}"
+                        ));
+                    }
+                    let hwid_req = r
+                        .header("x-hwid-not-supported")
+                        .is_some_and(|v| v.trim().eq_ignore_ascii_case("true"));
+                    if hwid_req && !hwid_cfg.enabled {
+                        return Err(
+                            "Подписка требует привязку HWID — включите «Совместимость HWID (Happ)» в Источниках"
+                                .into(),
+                        );
+                    }
+                    let has_enc_tag = r
+                        .header("encrypt-tag")
+                        .is_some_and(|v| !v.trim().is_empty());
+                    let text_preview = r.text();
+                    if !has_enc_tag && looks_like_html_portal(&text_preview) {
                         if html_fallback_url.is_none() {
-                            html_fallback_url = extract_sub_url_from_html(&body);
+                            html_fallback_url = extract_sub_url_from_html(&text_preview);
                         }
                         last_err = format!("панель вернула HTML-страницу ({ua_tag})");
-                        break; // Switch to next User-Agent immediately (network worked!)
+                        break;
                     }
-                    return Ok(SubscriptionFetchResult {
-                        profile_title: decode_profile_title_header(&r),
-                        userinfo: format_subscription_userinfo(&r),
-                        body,
-                        via_tag: format!("{ua_tag}/{net_tag}"),
-                    });
+                    return Ok(pack_ok(r, full_url, format!("{ua_tag}/{net_tag}")));
                 }
                 Ok(r) => {
-                    last_err = format!("HTTP {} ({ua_tag})", r.status);
+                    if r.header("x-hwid-limit")
+                        .or_else(|| r.header("x-hwid-max-devices-reached"))
+                        .is_some_and(|v| v.trim().eq_ignore_ascii_case("true"))
+                    {
+                        return Err(
+                            "Достигнут лимит устройств по подписке (HWID) — отвяжите старое устройство в боте"
+                                .into(),
+                        );
+                    }
+                    if r.header("x-hwid-not-supported")
+                        .is_some_and(|v| v.trim().eq_ignore_ascii_case("true"))
+                        || (matches!(r.status, 401 | 403)
+                            && !hwid_cfg.enabled
+                            && (prefer_happ_ua || !encrypted_kind.is_empty()))
+                    {
+                        last_err = format!(
+                            "HTTP {} — если подписка с лимитом устройств, включите «HWID (Happ)» в Источниках",
+                            r.status
+                        );
+                    } else {
+                        last_err = format!("HTTP {} ({ua_tag})", r.status);
+                    }
                     if (400..500).contains(&r.status) {
-                        break; // Client/UA rejection -> try next UA
+                        break;
                     }
                 }
                 Err(e) => {
@@ -1148,30 +1601,23 @@ pub async fn fetch_subscription_smart(
         }
     }
 
-    // If panel returned an HTML portal embedding `happ://add/https://.../sub/...`, fetch that link!
+    // HTML portal fallback (handles embedded `happ://crypt5/...` and `happ://add/...` buttons!)
     if let Some(sub_url) = html_fallback_url {
-        if sub_url != url {
+        if sub_url != fetch_url {
+            let (_, fb_headers) = &profiles[0];
             let opts = HttpRequestOptions {
-                timeout: Duration::from_millis(7500),
+                timeout: Duration::from_millis(7000),
                 max_bytes,
-                fragment_tls: true,
+                fragment_tls: socks5_proxy.is_none(),
                 socks5_proxy,
-                headers: vec![
-                    ("User-Agent".into(), "v2rayNG/1.9.30".into()),
-                    ("Accept".into(), "*/*".into()),
-                ],
+                headers: fb_headers.clone(),
                 ..Default::default()
             };
             if let Ok(r) = http_request_follow_6(&sub_url, &opts).await {
                 if r.status == 200 && !r.body.is_empty() {
-                    let body = r.text();
-                    if !looks_like_html_portal(&body) {
-                        return Ok(SubscriptionFetchResult {
-                            profile_title: decode_profile_title_header(&r),
-                            userinfo: format_subscription_userinfo(&r),
-                            body,
-                            via_tag: "portal->v2rayNG".into(),
-                        });
+                    let preview = r.text();
+                    if !looks_like_html_portal(&preview) {
+                        return Ok(pack_ok(r, &sub_url, "portal->Happ".into()));
                     }
                 }
             }
@@ -1181,42 +1627,132 @@ pub async fn fetch_subscription_smart(
     Err(last_err)
 }
 
-/// Fetch text and return `(body, mirror_tag)` for detailed diagnostics.
+/// Fetch text with gzip compression + ETag/Last-Modified `304 Not Modified` caching (0 KB mobile
+/// data when feed hasn't changed!) and CDN mirror fallback.
 pub async fn fetch_text_resilient_tagged(
     url: &str,
     socks5_proxy: Option<SocketAddr>,
     max_bytes: usize,
 ) -> Result<(String, &'static str), String> {
+    // 1. Check ETag / Last-Modified conditional cache (fast 90s fresh hit + 304 validation up to 30m)
+    let cached_validators: Option<(String, String, String)> = FEED_HTTP_CACHE
+        .read()
+        .ok()
+        .and_then(|m| {
+            let e = m.get(url)?;
+            if e.stored_at.elapsed() < Duration::from_secs(90) && !e.body.is_empty() {
+                // Fresh within 90s: zero network request at all!
+                Some((String::from("__FRESH__"), String::new(), e.body.clone()))
+            } else if e.stored_at.elapsed() < Duration::from_secs(1800)
+                && (!e.etag.is_empty() || !e.last_modified.is_empty())
+            {
+                Some((e.etag.clone(), e.last_modified.clone(), e.body.clone()))
+            } else {
+                None
+            }
+        });
+
+    if let Some((ref et, _, ref body)) = cached_validators {
+        if et == "__FRESH__" {
+            return Ok((body.clone(), "cache"));
+        }
+    }
+
+    let make_feed_headers = |include_etag: bool| -> Vec<(String, String)> {
+        let mut h = vec![("Accept-Encoding".into(), "gzip, deflate".into())];
+        if include_etag {
+            if let Some((ref et, ref lm, _)) = cached_validators {
+                if !et.is_empty() {
+                    h.push(("If-None-Match".into(), et.clone()));
+                }
+                if !lm.is_empty() {
+                    h.push(("If-Modified-Since".into(), lm.clone()));
+                }
+            }
+        }
+        h
+    };
+
+    let store_cache = |resp: &HttpResponse, text: &str| {
+        if text.len() > 512 * 1024 {
+            return;
+        }
+        let et = resp.header("etag").unwrap_or("").trim().to_string();
+        let lm = resp.header("last-modified").unwrap_or("").trim().to_string();
+        if et.is_empty() && lm.is_empty() {
+            return;
+        }
+        if let Ok(mut m) = FEED_HTTP_CACHE.write() {
+            if m.len() >= 40 {
+                m.retain(|_, v| v.stored_at.elapsed() < Duration::from_secs(900));
+                if m.len() >= 40 {
+                    m.clear();
+                }
+            }
+            m.insert(
+                url.to_string(),
+                CachedFeedEntry {
+                    etag: et,
+                    last_modified: lm,
+                    body: text.to_string(),
+                    stored_at: Instant::now(),
+                },
+            );
+        }
+    };
+
     let mirrors = expand_mirror_urls_tagged(url);
     let mut last_err = String::from("нет зеркал");
 
-    // If a working VPN/SOCKS tunnel is currently active, try fetching directly through it first
+    // If a working VPN/SOCKS tunnel is currently active, try fetching through it first
     if let Some(proxy) = socks5_proxy {
         let opts = HttpRequestOptions {
-            timeout: Duration::from_millis(5500),
+            timeout: Duration::from_millis(5000),
             max_bytes,
             fragment_tls: false,
             socks5_proxy: Some(proxy),
+            headers: make_feed_headers(true),
             ..Default::default()
         };
         match http_request(&mirrors[0].0, &opts).await {
-            Ok(r) if r.status == 200 && !r.body.is_empty() => return Ok((r.text(), "tunnel")),
+            Ok(r) if r.status == 304 => {
+                if let Some((_, _, cached_body)) = cached_validators {
+                    return Ok((cached_body, "304"));
+                }
+            }
+            Ok(r) if r.status == 200 && !r.body.is_empty() => {
+                let txt = r.text();
+                store_cache(&r, &txt);
+                return Ok((txt, "tunnel"));
+            }
             Ok(r) => last_err = format!("tunnel HTTP {}", r.status),
             Err(e) => last_err = format!("tunnel: {e}"),
         }
     }
 
-    // Direct resilient cascade with anti-spoof DoH + TLS ClientHello fragmentation
-    for (m, tag) in &mirrors {
+    // Direct resilient cascade with gzip + ETag + anti-spoof DoH + TLS ClientHello fragmentation
+    for (idx, (m, tag)) in mirrors.iter().enumerate() {
         let opts = HttpRequestOptions {
-            timeout: Duration::from_millis(4800),
+            timeout: Duration::from_millis(4500),
             max_bytes,
             fragment_tls: true,
             socks5_proxy: None,
+            headers: make_feed_headers(idx == 0),
             ..Default::default()
         };
         match http_request(m, &opts).await {
-            Ok(r) if r.status == 200 && !r.body.is_empty() => return Ok((r.text(), *tag)),
+            Ok(r) if r.status == 304 => {
+                if let Some((_, _, cached_body)) = cached_validators {
+                    return Ok((cached_body, "304"));
+                }
+            }
+            Ok(r) if r.status == 200 && !r.body.is_empty() => {
+                let txt = r.text();
+                if idx == 0 {
+                    store_cache(&r, &txt);
+                }
+                return Ok((txt, *tag));
+            }
             Ok(r) => last_err = format!("{tag}: HTTP {}", r.status),
             Err(e) => last_err = format!("{tag}: {e}"),
         }

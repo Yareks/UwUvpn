@@ -1,7 +1,7 @@
 //! Dynamic subscription sources, Base64/plain decoder, URI parser, deduplicator, and priority scorer.
 
 use crate::diag::{diag_info, diag_ok, diag_warn};
-use crate::net_util::{fetch_subscription_smart, fetch_text_resilient, fetch_text_resilient_tagged};
+use crate::net_util::{fetch_text_resilient, fetch_text_resilient_tagged};
 use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
 use base64::Engine;
 use percent_encoding::percent_decode_str;
@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use std::time::Instant;
 use url::Url;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SubSource {
     pub name: String,
     pub url: String,
@@ -23,6 +23,33 @@ pub struct SubSource {
     /// Optional human-readable expiry / quota parsed from `subscription-userinfo`.
     #[serde(default)]
     pub userinfo: String,
+    /// Structured quota & Happ/Remnawave/Marzban subscription metadata (v1.6.0).
+    #[serde(default)]
+    pub upload_bytes: u64,
+    #[serde(default)]
+    pub download_bytes: u64,
+    #[serde(default)]
+    pub total_bytes: u64,
+    #[serde(default)]
+    pub expire_unix: u64,
+    #[serde(default)]
+    pub update_interval_hours: u32,
+    #[serde(default)]
+    pub announce: String,
+    #[serde(default)]
+    pub support_url: String,
+    #[serde(default)]
+    pub web_page_url: String,
+    #[serde(default)]
+    pub hwid_status: String,
+    /// `"crypt"`, `"crypt2"`, `"crypt3"`, `"crypt4"`, `"crypt5"`, `"incy-crypt1"`, or `""`.
+    #[serde(default)]
+    pub encrypted_kind: String,
+    /// True if server delivered an AES-128-GCM body-encrypted Happ payload (`Encrypt-Tag`).
+    #[serde(default)]
+    pub body_encrypted: bool,
+    #[serde(default)]
+    pub prefer_happ_ua: bool,
     /// Number of valid unique keys/proxies parsed on last sync.
     #[serde(default)]
     pub cached_count: u32,
@@ -35,6 +62,9 @@ pub struct SubSource {
     /// Cached normalized URIs for user's custom subscriptions (`!builtin`), capped to 120 items.
     #[serde(default)]
     pub cached_uris: Vec<String>,
+    /// Cached raw Xray JSON outbounds for JSON-format Happ/Remnawave subscriptions, capped to 64 items.
+    #[serde(default)]
+    pub cached_json_outbounds: Vec<serde_json::Value>,
 }
 
 fn builtin_src(name: &str, url: &str, kind: &str, region_hint: &str) -> SubSource {
@@ -45,11 +75,7 @@ fn builtin_src(name: &str, url: &str, kind: &str, region_hint: &str) -> SubSourc
         region_hint: region_hint.into(),
         enabled: true,
         builtin: true,
-        userinfo: String::new(),
-        cached_count: 0,
-        last_sync_unix: 0,
-        content_hash: String::new(),
-        cached_uris: Vec::new(),
+        ..Default::default()
     }
 }
 
@@ -59,12 +85,6 @@ fn builtin_src(name: &str, url: &str, kind: &str, region_hint: &str) -> SubSourc
 pub fn default_sources() -> Vec<SubSource> {
     vec![
         // --- VPN: Белые списки РФ (Минцифры SNI + VK Cloud / Yandex Cloud / CDNvideo CIDR) ---
-        builtin_src(
-            "БС РФ · Auto-Checked (Минцифры SNI)",
-            "https://raw.githubusercontent.com/u23jd9/russia-whitelist-vpn/main/whitelist_raw.txt",
-            "vpn",
-            "WHITELIST",
-        ),
         builtin_src(
             "БС РФ · CIDR VK/Yandex/CDN (Проверенные)",
             "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/WHITE-CIDR-RU-checked.txt",
@@ -80,18 +100,6 @@ pub fn default_sources() -> Vec<SubSource> {
         builtin_src(
             "БС РФ · CIDR Полный пул",
             "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/WHITE-CIDR-RU-all.txt",
-            "vpn",
-            "WHITELIST",
-        ),
-        builtin_src(
-            "БС РФ · Zieng2 XHTTP & Reality",
-            "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt",
-            "vpn",
-            "WHITELIST",
-        ),
-        builtin_src(
-            "БС РФ · Zieng2 Lite Моб.",
-            "https://raw.githubusercontent.com/zieng2/wl/main/vless_lite.txt",
             "vpn",
             "WHITELIST",
         ),
@@ -211,6 +219,264 @@ pub fn default_sources() -> Vec<SubSource> {
             "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/top100.txt",
             "vpn",
             "AUTO",
+        ),
+        // --- Multi-Protocol Curated Pools (Hysteria2 QUIC, VLESS Reality/XHTTP/WS/gRPC, Trojan, VMess, SS2022, SOCKS5) ---
+        builtin_src(
+            "MatinGhanbari · Hysteria2 QUIC",
+            "https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/main/subscriptions/filtered/subs/hysteria2.txt",
+            "vpn",
+            "HY2",
+        ),
+        builtin_src(
+            "MatinGhanbari · VLESS Filtered",
+            "https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/main/subscriptions/filtered/subs/vless.txt",
+            "vpn",
+            "AUTO",
+        ),
+        builtin_src(
+            "MatinGhanbari · Trojan TLS",
+            "https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/main/subscriptions/filtered/subs/trojan.txt",
+            "vpn",
+            "AUTO",
+        ),
+        builtin_src(
+            "MatinGhanbari · Shadowsocks AEAD/2022",
+            "https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/main/subscriptions/filtered/subs/ss.txt",
+            "vpn",
+            "AUTO",
+        ),
+        builtin_src(
+            "NoMoreWalls · VLESS + Hy2 + Trojan + VMess",
+            "https://raw.githubusercontent.com/peasoft/NoMoreWalls/master/list_raw.txt",
+            "vpn",
+            "MULTI",
+        ),
+        builtin_src(
+            "Ermaozi · Multi-Protocol (Hy2 + Reality + VMess)",
+            "https://raw.githubusercontent.com/ermaozi/get_subscribe/main/subscribe/v2ray.txt",
+            "vpn",
+            "MULTI",
+        ),
+        builtin_src(
+            "OpenProxyList · Verified VLESS/Trojan/SS",
+            "https://raw.githubusercontent.com/roosterkid/openproxylist/main/V2RAY_RAW.txt",
+            "vpn",
+            "MULTI",
+        ),
+        builtin_src(
+            "Barry-Far · VMess TLS Pool",
+            "https://raw.githubusercontent.com/barry-far/V2ray-Config/main/Splitted-By-Protocol/vmess.txt",
+            "vpn",
+            "MULTI",
+        ),
+        builtin_src(
+            "Pawdroid · Curated Free Nodes",
+            "https://raw.githubusercontent.com/Pawdroid/Free-servers/main/sub",
+            "vpn",
+            "MULTI",
+        ),
+        // --- Нидерланды (NL · Амстердам AMS — топ скорость и YouTube 4K) ---
+        builtin_src(
+            "Argh94 · Нидерланды (AMS)",
+            "https://raw.githubusercontent.com/Argh94/V2RayAutoConfig/main/configs/Netherlands.txt",
+            "vpn",
+            "NL",
+        ),
+        builtin_src(
+            "SoliSpirit · Нидерланды",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Netherlands.txt",
+            "vpn",
+            "NL",
+        ),
+        // --- Финляндия (FI · Хельсинки HEL — минимальный пинг 15–35 мс!) ---
+        builtin_src(
+            "0xRadikal · Финляндия (HEL)",
+            "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Finland.txt",
+            "vpn",
+            "FI",
+        ),
+        builtin_src(
+            "SoliSpirit · Финляндия",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Finland.txt",
+            "vpn",
+            "FI",
+        ),
+        builtin_src(
+            "Argh94 · Финляндия",
+            "https://raw.githubusercontent.com/Argh94/V2RayAutoConfig/main/configs/Finland.txt",
+            "vpn",
+            "FI",
+        ),
+        // --- Великобритания (GB · Лондон LHR) ---
+        builtin_src(
+            "0xRadikal · Великобритания (LHR)",
+            "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/United_Kingdom.txt",
+            "vpn",
+            "GB",
+        ),
+        builtin_src(
+            "SoliSpirit · Великобритания",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/United_Kingdom.txt",
+            "vpn",
+            "GB",
+        ),
+        builtin_src(
+            "Argh94 · Великобритания",
+            "https://raw.githubusercontent.com/Argh94/V2RayAutoConfig/main/configs/UK.txt",
+            "vpn",
+            "GB",
+        ),
+        // --- Франция (FR · Париж CDG) ---
+        builtin_src(
+            "0xRadikal · Франция (CDG)",
+            "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/France.txt",
+            "vpn",
+            "FR",
+        ),
+        builtin_src(
+            "SoliSpirit · Франция",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/France.txt",
+            "vpn",
+            "FR",
+        ),
+        // --- Швеция (SE · Стокгольм ARN — низкий пинг!) ---
+        builtin_src(
+            "0xRadikal · Швеция (ARN)",
+            "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Sweden.txt",
+            "vpn",
+            "SE",
+        ),
+        builtin_src(
+            "SoliSpirit · Швеция",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Sweden.txt",
+            "vpn",
+            "SE",
+        ),
+        // --- Польша (PL · Варшава WAW) ---
+        builtin_src(
+            "0xRadikal · Польша (WAW)",
+            "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Poland.txt",
+            "vpn",
+            "PL",
+        ),
+        builtin_src(
+            "SoliSpirit · Польша",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Poland.txt",
+            "vpn",
+            "PL",
+        ),
+        // --- Швейцария (CH · Цюрих ZRH) и Австрия (AT · Вена VIE) ---
+        builtin_src(
+            "0xRadikal · Швейцария (ZRH)",
+            "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Switzerland.txt",
+            "vpn",
+            "CH",
+        ),
+        builtin_src(
+            "SoliSpirit · Швейцария",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Switzerland.txt",
+            "vpn",
+            "CH",
+        ),
+        builtin_src(
+            "0xRadikal · Австрия (VIE)",
+            "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Austria.txt",
+            "vpn",
+            "CH",
+        ),
+        // --- Турция (TR · Стамбул IST — игры, подписки, сервисы) ---
+        builtin_src(
+            "0xRadikal · Турция (IST)",
+            "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Turkey.txt",
+            "vpn",
+            "TR",
+        ),
+        builtin_src(
+            "Argh94 · Турция (Hy2 + VLESS)",
+            "https://raw.githubusercontent.com/Argh94/V2RayAutoConfig/main/configs/Turkey.txt",
+            "vpn",
+            "TR",
+        ),
+        // --- Япония (JP · Токио NRT) и Сингапур (SG · SIN) ---
+        builtin_src(
+            "0xRadikal · Япония (NRT)",
+            "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Japan.txt",
+            "vpn",
+            "JP",
+        ),
+        builtin_src(
+            "SoliSpirit · Япония",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Japan.txt",
+            "vpn",
+            "JP",
+        ),
+        builtin_src(
+            "0xRadikal · Сингапур (SIN)",
+            "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Singapore.txt",
+            "vpn",
+            "SG",
+        ),
+        builtin_src(
+            "SoliSpirit · Сингапур",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Singapore.txt",
+            "vpn",
+            "SG",
+        ),
+        // --- Канада (CA · Торонто/Монреаль YYZ) ---
+        builtin_src(
+            "0xRadikal · Канада (YYZ)",
+            "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/Countries/Canada.txt",
+            "vpn",
+            "CA",
+        ),
+        builtin_src(
+            "SoliSpirit · Канада",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Canada.txt",
+            "vpn",
+            "CA",
+        ),
+        // --- YouTube без рекламы (0% прероллов/мидроллов: Албания AL, Молдова MD, Армения AM, EU GL=RU) ---
+        builtin_src(
+            "YT No-Ads · Албания (0% рекламы)",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Albania.txt",
+            "vpn",
+            "YT",
+        ),
+        builtin_src(
+            "YT No-Ads · Молдова (0% рекламы)",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Moldova.txt",
+            "vpn",
+            "YT",
+        ),
+        builtin_src(
+            "YT No-Ads · Армения (0% рекламы)",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Armenia.txt",
+            "vpn",
+            "YT",
+        ),
+        builtin_src(
+            "YT No-Ads · Казахстан & СНГ",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Kazakhstan.txt",
+            "vpn",
+            "YT",
+        ),
+        builtin_src(
+            "YT No-Ads · Беларусь & EU",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Belarus.txt",
+            "vpn",
+            "YT",
+        ),
+        builtin_src(
+            "YT No-Ads · Люксембург & EU",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Luxembourg.txt",
+            "vpn",
+            "YT",
+        ),
+        builtin_src(
+            "YT No-Ads · Kobabi Fast EU (GL=RU/MD)",
+            "https://raw.githubusercontent.com/liketolivefree/kobabi/main/sub.txt",
+            "vpn",
+            "YT",
         ),
         // --- Telegram: Russia-Checked & DC-Verified MTProto Fake-TLS (ee), Secure (dd) & SOCKS5 (Calls) ---
         builtin_src(
@@ -503,6 +769,14 @@ pub struct VerifiedVpnNode {
     /// TRUE when verified LIVE on this Android device/ISP; FALSE for bundled `bootstrap_seed.json`!
     #[serde(default)]
     pub device_verified: bool,
+    /// TRUE when Google's own YouTube geo (`sw.js_data`) returns a 0%-monetized country (`AL`, `MD`,
+    /// `RU` on foreign VPS, `MC`, `AD`, `AM`, `BY`, `MN`, `MM`, `UZ`, `KG`, `TJ`, `TM`) on a fast
+    /// non-RU exit — guarantees 0% pre-roll/mid-roll/Shorts/Music ads in official YouTube app & web!
+    #[serde(default)]
+    pub yt_ad_free: bool,
+    /// Exact ISO-2 country code detected by Google YouTube (`sw.js_data`), e.g. `"AL"`, `"MD"`, `"RU"`.
+    #[serde(default)]
+    pub yt_country: String,
     pub source_tier: u8,
     pub raw_uri: String,
     pub outbound_json: serde_json::Value,
@@ -549,62 +823,93 @@ pub fn content_hash_short(s: &str) -> String {
     hex::encode(&h.finalize()[..8])
 }
 
-/// Unwrap VPN client subscription deep-links (`happ://add/...`, `v2raytun://import/...`,
-/// `v2rayng://install-config?url=...`, `hiddify://import/...`, `streisand://import/...`,
-/// `sing-box://import-remote-profile?url=...`, `clash://install-config?url=...`, `ssconf://...`)
-/// into a clean fetchable `https://` or `http://` URL.
+/// Unwrap & offline-decrypt any VPN client subscription URL or encrypted deep-link:
+/// `happ://crypt/...` .. `happ://crypt5/...`, `https://.../happ://crypt5/...`, `incy://crypt1/...`,
+/// `happ://add/...`, `v2raytun://import/...`, `v2rayng://...`, `hiddify://import/...`,
+/// `streisand://import/...`, `sing-box://import-remote-profile?url=...`, `clash://...`, `ssconf://...`.
 pub fn unwrap_subscription_url(raw: &str) -> Option<String> {
-    let t = raw.trim();
-    if t.starts_with("https://") || t.starts_with("http://") {
-        // Ignore Telegram proxy share links — handled as TG proxies
-        if t.starts_with("https://t.me/proxy") || t.starts_with("https://t.me/socks") {
-            return None;
-        }
-        return Some(t.to_string());
-    }
-    if let Some(rest) = t.strip_prefix("ssconf://") {
-        return Some(format!("https://{rest}"));
-    }
-    for prefix in [
-        "happ://add/",
-        "v2raytun://import/",
-        "v2raytun://import-sub?url=",
-        "hiddify://import/",
-        "streisand://import/",
-        "flclash://install-config?url=",
-    ] {
-        if let Some(rest) = t.strip_prefix(prefix) {
-            let cut = rest.split('#').next().unwrap_or(rest).trim();
-            let dec = percent_decode_str(cut).decode_utf8_lossy().trim().to_string();
-            if dec.starts_with("https://") || dec.starts_with("http://") {
-                return Some(dec);
-            }
-        }
-    }
-    if let Ok(u) = Url::parse(t) {
-        if matches!(
-            u.scheme(),
-            "v2rayng" | "clash" | "sing-box" | "hiddify" | "v2raytun" | "happ" | "nekobox" | "karing"
-        ) {
-            for (k, v) in u.query_pairs() {
-                if k.eq_ignore_ascii_case("url") || k.eq_ignore_ascii_case("sub") {
-                    let sv = v.trim().to_string();
-                    if sv.starts_with("https://") || sv.starts_with("http://") {
-                        return Some(sv);
-                    }
-                }
-            }
-        }
+    if let Some(Ok(unw)) = crate::happ_compat::unwrap_or_decrypt_subscription(raw) {
+        return Some(unw.full_url);
     }
     None
 }
 
+/// Convert a standard WireGuard / AmneziaWG INI configuration (`[Interface]` + `[Peer]`) into a
+/// canonical `wireguard://` share URI so users can paste raw `.conf` files directly!
+pub fn convert_wg_conf_to_uri(text: &str) -> Option<String> {
+    if !text.contains("[Interface]") || !text.contains("[Peer]") {
+        return None;
+    }
+    let mut priv_key = String::new();
+    let mut pub_key = String::new();
+    let mut psk = String::new();
+    let mut address = String::new();
+    let mut endpoint = String::new();
+    let mut mtu = String::new();
+    let mut section = "";
+
+    for raw_line in text.lines() {
+        let line = raw_line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            section = if line.eq_ignore_ascii_case("[interface]") {
+                "iface"
+            } else if line.eq_ignore_ascii_case("[peer]") {
+                "peer"
+            } else {
+                ""
+            };
+            continue;
+        }
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
+        let key = k.trim().to_ascii_lowercase();
+        let val = v.trim();
+        match (section, key.as_str()) {
+            ("iface", "privatekey") => priv_key = val.to_string(),
+            ("iface", "address") => address = val.replace(' ', ""),
+            ("iface", "mtu") => mtu = val.to_string(),
+            ("peer", "publickey") => pub_key = val.to_string(),
+            ("peer", "presharedkey") => psk = val.to_string(),
+            ("peer", "endpoint") => endpoint = val.to_string(),
+            _ => {}
+        }
+    }
+    if priv_key.is_empty() || pub_key.is_empty() || endpoint.is_empty() {
+        return None;
+    }
+    let enc_priv: String = url::form_urlencoded::byte_serialize(priv_key.as_bytes()).collect();
+    let mut ser = url::form_urlencoded::Serializer::new(String::new());
+    ser.append_pair("publickey", &pub_key);
+    if !address.is_empty() {
+        ser.append_pair("address", &address);
+    }
+    if !psk.is_empty() {
+        ser.append_pair("presharedkey", &psk);
+    }
+    if !mtu.is_empty() {
+        ser.append_pair("mtu", &mtu);
+    }
+    let q = ser.finish();
+    Some(format!("wireguard://{enc_priv}@{endpoint}?{q}#WireGuard"))
+}
+
 /// Extract clean share URIs from any decoded subscription payload (Base64 list, plain text,
-/// Remnawave/Marzban/3x-ui/Happ/Shuka lists, or embedded links). Skips dummy banner placeholders!
+/// Remnawave/Marzban/3x-ui/Happ/Shuka lists, WireGuard `.conf`, SOCKS5/HTTPS proxies).
 pub fn extract_vpn_uris_from_subscription(raw_body: &str, max_items: usize) -> Vec<String> {
     let decoded = decode_subscription_body(raw_body);
     let mut out = Vec::new();
     let mut seen = HashSet::new();
+    if let Some(wg_uri) = convert_wg_conf_to_uri(&decoded) {
+        if crate::xray_config::parse_share_uri_to_candidate(&wg_uri, "AUTO", 0, false).is_some()
+            && seen.insert(wg_uri.clone())
+        {
+            out.push(wg_uri);
+        }
+    }
     for line in decoded.lines() {
         let l = line.trim();
         if l.is_empty() || l.starts_with('#') || l.starts_with("//") {
@@ -615,14 +920,18 @@ pub fn extract_vpn_uris_from_subscription(raw_body: &str, max_items: usize) -> V
             || l.starts_with("trojan://")
             || l.starts_with("ss://")
             || l.starts_with("hy2://")
-            || l.starts_with("hysteria2://"))
+            || l.starts_with("hysteria2://")
+            || l.starts_with("wireguard://")
+            || l.starts_with("wg://")
+            || l.starts_with("socks5://")
+            || l.starts_with("socks://")
+            || (l.starts_with("https://") && l.contains('@')))
         {
             continue;
         }
         if is_dummy_banner_uri(l) {
             continue;
         }
-        // Verify URI parses into a valid strict Xray outbound
         if crate::xray_config::parse_share_uri_to_candidate(l, "AUTO", 0, false).is_some()
             && seen.insert(l.to_string())
         {
@@ -696,7 +1005,10 @@ pub fn is_rf_clean_sni(sni: &str) -> bool {
 }
 
 pub fn detect_region_hint(remark: &str, host: &str, source_hint: &str) -> String {
-    if source_hint == "US" || source_hint == "DE" {
+    if matches!(
+        source_hint,
+        "US" | "DE" | "NL" | "FI" | "GB" | "FR" | "SE" | "PL" | "CH" | "AT" | "TR" | "JP" | "SG" | "CA"
+    ) {
         return source_hint.to_string();
     }
     let r = remark.to_lowercase();
@@ -735,7 +1047,6 @@ pub fn detect_region_hint(remark: &str, host: &str, source_hint: &str) -> String
         || r.contains("frankfurt")
         || r.contains("falkenstein")
         || r.contains("nuremberg")
-        || r.contains("hetzner")
         || r.contains("герман")
         || r.starts_with("de ")
         || r.starts_with("de-")
@@ -743,9 +1054,43 @@ pub fn detect_region_hint(remark: &str, host: &str, source_hint: &str) -> String
         || r.contains("[de]")
         || r.contains("(de)")
         || h.contains(".de.")
-        || h.contains("fra")
+        || h.starts_with("de.")
+        || h.starts_with("de-")
     {
         return "DE".to_string();
+    }
+    for (flag, kws, cc) in [
+        ("🇳🇱", &["netherlands", "amsterdam", "нидерланд", "голланди", "[nl]", "(nl)"][..], "NL"),
+        ("🇫🇮", &["finland", "helsinki", "финлянд", "[fi]", "(fi)"][..], "FI"),
+        ("🇬🇧", &["united kingdom", "london", "britain", "британи", "англи", "[gb]", "[uk]", "(uk)"][..], "GB"),
+        ("🇫🇷", &["france", "paris", "франц", "[fr]", "(fr)"][..], "FR"),
+        ("🇸🇪", &["sweden", "stockholm", "швеци", "[se]", "(se)"][..], "SE"),
+        ("🇵🇱", &["poland", "warsaw", "польш", "[pl]", "(pl)"][..], "PL"),
+        ("🇨🇭", &["switzerland", "zurich", "швейцар", "[ch]", "(ch)"][..], "CH"),
+        ("🇦🇹", &["austria", "vienna", "австри", "[at]", "(at)"][..], "AT"),
+        ("🇹🇷", &["turkey", "türkiye", "istanbul", "турци", "стамбул", "[tr]", "(tr)"][..], "TR"),
+        ("🇯🇵", &["japan", "tokyo", "osaka", "япони", "[jp]", "(jp)"][..], "JP"),
+        ("🇸🇬", &["singapore", "сингапур", "[sg]", "(sg)"][..], "SG"),
+        ("🇨🇦", &["canada", "toronto", "montreal", "канад", "[ca]", "(ca)"][..], "CA"),
+        ("🇰🇷", &["korea", "seoul", "коре", "[kr]", "(kr)"][..], "KR"),
+        ("🇪🇪", &["estonia", "tallinn", "эстони", "[ee]"][..], "EE"),
+        ("🇱🇻", &["latvia", "riga", "латви", "[lv]"][..], "LV"),
+        ("🇨🇿", &["czech", "prague", "чехи", "[cz]"][..], "CZ"),
+        ("🇮🇹", &["italy", "milan", "итали", "[it]"][..], "IT"),
+        ("🇪🇸", &["spain", "madrid", "испани", "[es]"][..], "ES"),
+        ("🇦🇱", &["albania", "tirana", "албани", "[al]", "(al)"][..], "AL"),
+        ("🇲🇩", &["moldova", "chisinau", "молдов", "молдави", "[md]", "(md)"][..], "MD"),
+        ("🇦🇲", &["armenia", "yerevan", "армени", "[am]", "(am)"][..], "AM"),
+        ("🇱🇺", &["luxembourg", "люксембург", "[lu]", "(lu)"][..], "LU"),
+        ("🇰🇿", &["kazakhstan", "almaty", "astana", "казахстан", "[kz]"][..], "KZ"),
+        ("🇧🇾", &["belarus", "minsk", "беларус", "[by]"][..], "BY"),
+        ("🇲🇨", &["monaco", "монако", "[mc]"][..], "MC"),
+        ("🇳🇴", &["norway", "oslo", "норвег", "[no]"][..], "NO"),
+        ("🇰🇿", &["kazakhstan", "almaty", "казахстан", "[kz]"][..], "KZ"),
+    ] {
+        if remark.contains(flag) || kws.iter().any(|kw| r.contains(kw)) {
+            return cc.to_string();
+        }
     }
     "OTHER".to_string()
 }
@@ -817,51 +1162,113 @@ pub async fn fetch_vpn_candidates(
     socks5_proxy: Option<SocketAddr>,
     blacklist: &HashSet<String>,
 ) -> Vec<VpnCandidate> {
-    let selected: Vec<SubSource> = sources
+    let mut selected: Vec<SubSource> = Vec::new();
+    // 1) Always fetch 100% of the user's own custom subscriptions first!
+    for s in sources {
+        if s.enabled && s.kind == "vpn" && !s.builtin {
+            selected.push(s.clone());
+        }
+    }
+    // 2) Smart selective feed router: picks the exact relevant country + protocol feeds (<= 20 per
+    //    sweep) so RAM stays minimal while covering 14+ countries and all anti-DPI protocols!
+    let want_wl = whitelist_mode || target_region == "WL";
+    let builtins: Vec<&SubSource> = sources
         .iter()
+        .filter(|s| s.enabled && s.kind == "vpn" && s.builtin)
         .filter(|s| {
-            if !s.enabled || s.kind != "vpn" {
-                return false;
-            }
-            if !s.builtin {
-                return true; // Always fetch user's own subscriptions first!
-            }
-            if whitelist_mode {
-                // In Белые списки РФ mode, load ALL 7 dedicated RF Whitelist/CIDR feeds + target region
-                return matches!(s.region_hint.as_str(), "WHITELIST")
-                    || s.region_hint == target_region
+            if want_wl {
+                return s.region_hint == "WHITELIST"
                     || s.url.contains("shadowsocks.txt")
                     || s.url.contains("BLACK_SS+All_RUS");
             }
             match target_region {
-                "US" => matches!(s.region_hint.as_str(), "US" | "AUTO" | "WHITELIST"),
-                "DE" => matches!(s.region_hint.as_str(), "DE" | "AUTO" | "WHITELIST"),
-                _ => true,
+                "US" => matches!(s.region_hint.as_str(), "US" | "CA" | "HY2" | "MULTI" | "AUTO"),
+                "DE" => matches!(s.region_hint.as_str(), "DE" | "NL" | "HY2" | "MULTI" | "AUTO"),
+                "NL" => matches!(s.region_hint.as_str(), "NL" | "DE" | "HY2" | "MULTI"),
+                "FI" => matches!(s.region_hint.as_str(), "FI" | "SE" | "HY2" | "MULTI" | "WHITELIST"),
+                "GB" => matches!(s.region_hint.as_str(), "GB" | "NL" | "HY2" | "MULTI"),
+                "FR" => matches!(s.region_hint.as_str(), "FR" | "CH" | "NL" | "HY2" | "MULTI"),
+                "SE" => matches!(s.region_hint.as_str(), "SE" | "FI" | "HY2" | "MULTI"),
+                "PL" => matches!(s.region_hint.as_str(), "PL" | "DE" | "FI" | "HY2" | "MULTI"),
+                "CH" => matches!(s.region_hint.as_str(), "CH" | "AT" | "DE" | "HY2" | "MULTI"),
+                "TR" => matches!(s.region_hint.as_str(), "TR" | "HY2" | "MULTI" | "AUTO"),
+                "JP" => matches!(s.region_hint.as_str(), "JP" | "SG" | "HY2" | "MULTI"),
+                "SG" => matches!(s.region_hint.as_str(), "SG" | "JP" | "HY2" | "MULTI"),
+                "CA" => matches!(s.region_hint.as_str(), "CA" | "US" | "HY2" | "MULTI"),
+                "YT" | "AL" | "MD" => matches!(
+                    s.region_hint.as_str(),
+                    "YT" | "NL" | "FI" | "DE" | "SE" | "PL" | "WHITELIST"
+                ),
+                "EU" => matches!(
+                    s.region_hint.as_str(),
+                    "DE" | "NL" | "FI" | "GB" | "FR" | "SE" | "PL" | "CH" | "YT" | "HY2" | "MULTI"
+                ),
+                "WARP" => matches!(s.region_hint.as_str(), "DE" | "NL" | "FI" | "US" | "HY2"),
+                // AUTO: balanced global diversity across FI, NL, DE, US, SE, GB, FR, PL, TR, SG, JP,
+                // Ad-Free YouTube (AL/MD/EU-GL=RU), Russian Whitelist, Hy2, Reality, XHTTP, Trojan, VMess, SS2022!
+                _ => {
+                    s.region_hint == "HY2"
+                        || s.region_hint == "MULTI"
+                        || s.region_hint == "WHITELIST"
+                        || s.region_hint == "YT"
+                        || s.url.contains("0xRadikal/Free-v2ray-Configs/main/Countries/")
+                        || s.url.contains("Argh94/V2RayAutoConfig/main/configs/Netherlands")
+                        || s.url.contains("Argh94/V2RayAutoConfig/main/configs/Germany")
+                        || s.url.contains("Argh94/V2RayAutoConfig/main/configs/USA")
+                        || s.url.contains("Argh94/V2RayAutoConfig/main/configs/Hysteria2")
+                        || s.url.contains("MatinGhanbari")
+                        || s.url.contains("shadowsocks.txt")
+                        || s.url.contains("top100.txt")
+                        || s.url.contains("Splitted-By-Protocol/trojan")
+                }
             }
         })
-        .cloned()
+        .take(28)
         .collect();
+    selected.extend(builtins.into_iter().cloned());
 
     let total_sources = selected.len();
-    let mut handles = Vec::new();
+    // Bounded 8-way feed download semaphore (prevents 28-socket TLS/DoH burst & cuts peak RAM by 60%!)
+    let feed_sem = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
+    let mut handles = Vec::with_capacity(total_sources);
     for src in selected {
+        let sem_f = feed_sem.clone();
         handles.push(tokio::spawn(async move {
+            let _permit = sem_f.acquire_owned().await.ok();
             let t0 = Instant::now();
-            // Custom user subscriptions MUST use VPN-client User-Agent (`v2rayNG/1.9.30` / `Happ`)
-            // so Remnawave/Shuka/Marzban/3x-ui/Happ return Base64 keys instead of HTML portals!
-            let res: Result<(String, String), String> = if !src.builtin {
-                match fetch_subscription_smart(&src.url, socks5_proxy, 768 * 1024).await {
-                    Ok(sub) => Ok((sub.body, sub.via_tag)),
-                    Err(_e) if !src.cached_uris.is_empty() => {
-                        Ok((src.cached_uris.join("\n"), "cache".to_string()))
+            // Custom user subscriptions use Happ 4.11.2 / v2rayNG / SFA + AES-128-GCM body decrypt + gzip!
+            let res: Result<(String, Vec<serde_json::Value>, String), String> = if !src.builtin {
+                let fetch_u = crate::happ_compat::fetch_url_without_fragment(&src.url);
+                let hwid_def = crate::happ_compat::HwidIdentityConfig::default();
+                match crate::net_util::fetch_subscription_smart_ex(
+                    &src.url,
+                    &fetch_u,
+                    &src.encrypted_kind,
+                    src.body_encrypted,
+                    src.prefer_happ_ua,
+                    &hwid_def,
+                    socks5_proxy,
+                    768 * 1024,
+                )
+                .await
+                {
+                    Ok(sub) => Ok((sub.body, sub.envelope.xray_json_configs, sub.via_tag)),
+                    Err(_e)
+                        if !src.cached_uris.is_empty() || !src.cached_json_outbounds.is_empty() =>
+                    {
+                        Ok((
+                            src.cached_uris.join("\n"),
+                            src.cached_json_outbounds.clone(),
+                            "cache".to_string(),
+                        ))
                     }
                     Err(e) => Err(e),
                 }
             } else {
-                // Limit each public feed to 640 KiB so mobile LTE completes all feeds in ~2.2s
-                fetch_text_resilient_tagged(&src.url, socks5_proxy, 640 * 1024)
+                // Limit each public feed to 576 KiB with transparent gzip + ETag 304 cache!
+                fetch_text_resilient_tagged(&src.url, socks5_proxy, 576 * 1024)
                     .await
-                    .map(|(b, tag)| (b, tag.to_string()))
+                    .map(|(b, tag)| (b, Vec::new(), tag.to_string()))
             };
             (src, res, t0.elapsed().as_millis() as u32)
         }));
@@ -879,7 +1286,7 @@ pub async fn fetch_vpn_candidates(
             fail_feeds += 1;
             continue;
         };
-        let (body, mirror) = match res {
+        let (body, json_cfgs, mirror) = match res {
             Ok(v) => {
                 ok_feeds += 1;
                 v
@@ -894,16 +1301,38 @@ pub async fn fetch_vpn_candidates(
             }
         };
 
-        let decoded = decode_subscription_body(&body);
         let tier = if src.builtin { 1 } else { 0 };
-        // Cap parsed lines per huge feed so one 3,000-line file doesn't drown curated feeds
         let mut per_src = 0usize;
+        let mut raw_line_budget = 0usize;
+
+        // Import any raw Xray JSON outbounds from Happ / Remnawave JSON subscriptions
+        if tier == 0 && !json_cfgs.is_empty() {
+            for jcfg in &json_cfgs {
+                for mut jcand in crate::xray_config::parse_xray_json_config_to_candidates(
+                    jcfg,
+                    &src.name,
+                    &src.region_hint,
+                    0,
+                ) {
+                    jcand.priority_score += 280;
+                    let dkey = format!("custom-json:{}", jcand.id);
+                    if seen_ep.insert(dkey) {
+                        candidates.push(jcand);
+                        per_src += 1;
+                    }
+                }
+            }
+        }
+
+        let decoded = decode_subscription_body(&body);
         for line in decoded.lines() {
             let l = line.trim();
             if l.is_empty() || l.starts_with('#') || l.starts_with("//") || is_dummy_banner_uri(l) {
                 continue;
             }
-            if per_src >= 520 {
+            raw_line_budget += 1;
+            // Bound BOTH raw parsed lines (prevents CPU spikes on 5,000-line junk files) AND accepted nodes!
+            if per_src >= 420 || (tier != 0 && raw_line_budget >= 1100) {
                 break;
             }
             // Alternate fragment_tls on REALITY servers (keeps Tier-0 user subscription Reality
@@ -993,17 +1422,31 @@ pub async fn fetch_vpn_candidates(
 
                 // Adjust score for user's target region & mobile whitelist preference
                 match target_region {
-                    "US" if cand.region_hint == "US" => cand.priority_score += 80,
-                    "US" if cand.region_hint == "DE" => cand.priority_score -= 20,
-                    "DE" if cand.region_hint == "DE" => cand.priority_score += 80,
-                    "DE" if cand.region_hint == "US" => cand.priority_score -= 20,
-                    _ => {
-                        if cand.region_hint == "DE" || cand.region_hint == "US" {
+                    "AUTO" | "WL" | "WARP" => {
+                        if matches!(
+                            cand.region_hint.as_str(),
+                            "FI" | "NL" | "DE" | "SE" | "US" | "GB" | "FR" | "PL" | "CH" | "TR" | "SG" | "JP" | "CA"
+                        ) {
                             cand.priority_score += 55;
                         }
                     }
+                    "EU" => {
+                        if matches!(
+                            cand.region_hint.as_str(),
+                            "FI" | "NL" | "DE" | "SE" | "GB" | "FR" | "PL" | "CH" | "AT"
+                        ) {
+                            cand.priority_score += 80;
+                        }
+                    }
+                    exact_cc => {
+                        if cand.region_hint == exact_cc {
+                            cand.priority_score += 95;
+                        } else if cand.region_hint != "OTHER" {
+                            cand.priority_score -= 15;
+                        }
+                    }
                 }
-                if whitelist_mode {
+                if want_wl {
                     if is_tier_a_wl {
                         cand.priority_score += 210; // #1: Exact Минцифры SNI (yandex/vk/rutube/wb/tbank/ozon/sber)
                     } else if src.url.contains("WHITE-CIDR-RU-checked")

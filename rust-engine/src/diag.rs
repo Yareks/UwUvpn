@@ -12,8 +12,8 @@ use once_cell::sync::Lazy;
 use serde_json::json;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -21,13 +21,133 @@ const MAX_LOG_FILE_BYTES: u64 = 96 * 1024;
 const MAX_MEM_FALLBACK_LINES: usize = 250;
 
 static LOG_DIR: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new(None));
+static LOG_APPROX_BYTES: AtomicU64 = AtomicU64::new(0);
 static MEM_FALLBACK: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
 pub fn set_log_dir(dir: PathBuf) {
     let _ = fs::create_dir_all(&dir);
+    let cur_len = fs::metadata(dir.join("velox_diag.log"))
+        .map(|m| m.len())
+        .unwrap_or(0);
+    LOG_APPROX_BYTES.store(cur_len, Ordering::Relaxed);
     if let Ok(mut g) = LOG_DIR.write() {
         *g = Some(dir);
     }
+}
+
+/// Redact a subscription or proxy URL so secret path tokens, query keys, passwords, and
+/// `happ://crypt*` blobs NEVER leak into diagnostic logs or exported log reports!
+pub fn redact_url_for_log(raw: &str) -> String {
+    let s = raw.trim();
+    for scheme in [
+        "happ://crypt5/",
+        "happ://crypt4/",
+        "happ://crypt3/",
+        "happ://crypt2/",
+        "happ://crypt/",
+        "incy://crypt1/",
+        "v2raytun://crypt/",
+    ] {
+        if s.len() >= scheme.len() && s[..scheme.len()].eq_ignore_ascii_case(scheme) {
+            return format!("{scheme}***");
+        }
+    }
+    if let Ok(u) = url::Url::parse(s) {
+        let scheme = u.scheme();
+        let host = u.host_str().unwrap_or("unknown");
+        let port_sfx = u
+            .port()
+            .filter(|p| !((scheme == "https" && *p == 443) || (scheme == "http" && *p == 80)))
+            .map(|p| format!(":{p}"))
+            .unwrap_or_default();
+        if matches!(scheme, "http" | "https" | "ssconf") {
+            let segs: Vec<&str> = u.path().split('/').filter(|p| !p.is_empty()).collect();
+            let safe_path = match segs.as_slice() {
+                [] => String::new(),
+                [first] if first.len() <= 8 => format!("/{first}"),
+                [_secret] => "/***".to_string(),
+                [first, ..] if first.len() <= 12 => format!("/{first}/***"),
+                _ => "/***".to_string(),
+            };
+            let q_sfx = if u.query().is_some() { "?***" } else { "" };
+            return format!("{scheme}://{host}{port_sfx}{safe_path}{q_sfx}");
+        }
+        return format!("{scheme}://{host}{port_sfx}/***");
+    }
+    s.chars().take(48).collect()
+}
+
+/// Automatically scrub any accidental `happ://crypt*`, `incy://crypt*`, or share-URI credentials
+/// embedded inside a free-form log message.
+fn redact_inline_secrets(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for tok in input.split_whitespace() {
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        let low = tok.to_ascii_lowercase();
+        if low.starts_with("happ://crypt")
+            || low.starts_with("incy://crypt")
+            || low.starts_with("v2raytun://crypt")
+            || low.starts_with("vless://")
+            || low.starts_with("vmess://")
+            || low.starts_with("trojan://")
+            || low.starts_with("hy2://")
+            || low.starts_with("hysteria2://")
+            || low.starts_with("ss://")
+            || low.starts_with("ssconf://")
+        {
+            out.push_str(&redact_url_for_log(tok));
+        } else {
+            out.push_str(tok);
+        }
+    }
+    out
+}
+
+/// Cross-process race-free atomic file write using POSIX `flock(LOCK_EX)` on `{dst}.lock`
+/// and a PID-unique temporary file (`{name}.{pid}.tmp`) + atomic `rename()`.
+/// Prevents `app.velox.vpn` (UI) and `app.velox.vpn:vpn` (tunnel) from ever clobbering state!
+pub fn write_file_atomic_locked(dst: &Path, bytes: &[u8]) -> bool {
+    let Some(parent) = dst.parent() else {
+        return false;
+    };
+    let _ = fs::create_dir_all(parent);
+    let fname = dst
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("state.json");
+
+    #[cfg(unix)]
+    let _lock_guard = {
+        use std::os::unix::io::AsRawFd;
+        let lock_path = parent.join(format!(".{fname}.lock"));
+        OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(&lock_path)
+            .ok()
+            .map(|lf| {
+                unsafe {
+                    let _ = libc::flock(lf.as_raw_fd(), libc::LOCK_EX);
+                }
+                lf
+            })
+    };
+
+    let pid = std::process::id();
+    let tmp = parent.join(format!(".{fname}.{pid}.tmp"));
+    if fs::write(&tmp, bytes).is_err() {
+        let _ = fs::remove_file(&tmp);
+        return false;
+    }
+    if fs::rename(&tmp, dst).is_err() {
+        let ok = fs::write(dst, bytes).is_ok();
+        let _ = fs::remove_file(&tmp);
+        return ok;
+    }
+    true
 }
 
 /// Format local wall-clock `[HH:MM:SS.mmm]` using POSIX `localtime_r` (matches user's phone clock).
@@ -79,7 +199,8 @@ pub fn diag_log(level: &str, tag: &str, msg: impl AsRef<str>) {
     };
     let clean_tag = sanitize_single_line(tag, 12);
     let tag_final = if clean_tag.is_empty() { "SYS" } else { &clean_tag };
-    let clean_msg = sanitize_single_line(msg.as_ref(), 420);
+    let scrubbed = redact_inline_secrets(msg.as_ref());
+    let clean_msg = sanitize_single_line(&scrubbed, 420);
     if clean_msg.is_empty() {
         return;
     }
@@ -89,10 +210,17 @@ pub fn diag_log(level: &str, tag: &str, msg: impl AsRef<str>) {
     let dir_opt = LOG_DIR.read().ok().and_then(|g| g.clone());
     if let Some(dir) = dir_opt {
         let cur = dir.join("velox_diag.log");
-        if let Ok(meta) = fs::metadata(&cur) {
-            if meta.len() >= MAX_LOG_FILE_BYTES {
+        let add_len = (line.len() + 1) as u64;
+        // Zero-syscall fast path: only call `fs::metadata()` when atomic counter hits rollover!
+        let est = LOG_APPROX_BYTES.fetch_add(add_len, Ordering::Relaxed) + add_len;
+        if est >= MAX_LOG_FILE_BYTES {
+            let real_len = fs::metadata(&cur).map(|m| m.len()).unwrap_or(0);
+            if real_len >= MAX_LOG_FILE_BYTES {
                 let prev = dir.join("velox_diag.prev.log");
                 let _ = fs::rename(&cur, &prev);
+                LOG_APPROX_BYTES.store(add_len, Ordering::Relaxed);
+            } else {
+                LOG_APPROX_BYTES.store(real_len + add_len, Ordering::Relaxed);
             }
         }
         if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&cur) {
@@ -176,6 +304,7 @@ pub fn clear_diag_logs() {
         let _ = fs::remove_file(dir.join("velox_diag.prev.log"));
         let _ = fs::write(dir.join("velox_diag.log"), b"");
     }
+    LOG_APPROX_BYTES.store(0, Ordering::Relaxed);
     if let Ok(mut mem) = MEM_FALLBACK.lock() {
         mem.clear();
     }

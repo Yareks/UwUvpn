@@ -132,12 +132,12 @@ async fn cf_api_call(
     }
 
     let mut last_err = String::from("cf api unreachable");
-    for fixed_ip in candidate_ips {
+    for fixed_ip in candidate_ips.into_iter().take(3) {
         let opts = HttpRequestOptions {
             method: method.to_string(),
             headers: cf_headers(token),
             body: Some(body.clone()),
-            timeout: Duration::from_secs(9),
+            timeout: Duration::from_millis(4500),
             max_bytes: 128 * 1024,
             fragment_tls: true,
             socks5_proxy,
@@ -348,15 +348,25 @@ pub fn warp_wg_candidate_endpoints() -> Vec<(String, u16)> {
     ]
 }
 
-/// Cloudflare WARP MASQUE CONNECT-IP endpoints (port 443 across both .198.x and .199.x anycast pools).
+/// Cloudflare WARP MASQUE CONNECT-IP endpoints across .198.x/.199.x anycast pools & alt ports
+/// (443 standard HTTPS, 8443/2053 Cloudflare alt-HTTPS, 500 IKEv2 bypass).
 pub fn warp_masque_candidate_endpoints(primary: &str) -> Vec<(String, u16)> {
     let mut v = Vec::new();
-    if !primary.is_empty() {
-        v.push((primary.to_string(), 443));
-    }
-    for ip in ["162.159.198.2", "162.159.199.2", "162.159.198.1", "162.159.199.1"] {
-        if !v.iter().any(|(existing, _)| existing == ip) {
-            v.push((ip.to_string(), 443));
+    let p = if primary.is_empty() {
+        "162.159.198.2"
+    } else {
+        primary
+    };
+    for (ip, port) in [
+        (p, 443u16),
+        ("162.159.198.2", 443),
+        ("162.159.199.2", 443),
+        ("162.159.198.2", 8443),
+        ("162.159.198.2", 500),
+        ("162.159.199.2", 8443),
+    ] {
+        if !v.iter().any(|(ei, ep)| ei == ip && *ep == port) {
+            v.push((ip.to_string(), port));
         }
     }
     v

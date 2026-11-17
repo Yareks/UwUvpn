@@ -2,6 +2,7 @@
 //! free multi-echelon US/DE VPN provisioner, and authentic Telegram DC proxy verifier.
 
 pub mod diag;
+pub mod happ_compat;
 pub mod jni_bridge;
 pub mod net_util;
 pub mod opera;

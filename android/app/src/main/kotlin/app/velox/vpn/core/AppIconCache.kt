@@ -11,17 +11,26 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Ultra-lightweight bounded LRU app-icon loader for the per-app Split Tunneling selector.
+ * Ultra-lightweight bounded LRU app-icon cache for the per-app Split Tunneling sheet.
  * Renders BitmapDrawable, AdaptiveIconDrawable (Android 8–16 incl. Android 12), and vector
- * icons cleanly at 96x96 px (~36 KB each, capped at 96 entries <= ~3.3 MB peak).
+ * icons sharply at 84x84 px (~28 KB each, max 64 entries <= ~1.7 MB, auto-evicted on UI hide).
  */
 object AppIconCache {
 
-    private const val ICON_PX = 96
-    private val cache = LruCache<String, ImageBitmap>(96)
+    private const val ICON_PX = 84
+    private const val MAX_ENTRIES = 64
+    private val cache = LruCache<String, ImageBitmap>(MAX_ENTRIES)
 
     fun getCached(packageName: String): ImageBitmap? = synchronized(cache) {
         cache.get(packageName)
+    }
+
+    fun clear() = synchronized(cache) {
+        cache.evictAll()
+    }
+
+    fun trimHalf() = synchronized(cache) {
+        cache.trimToSize(MAX_ENTRIES / 2)
     }
 
     suspend fun load(context: Context, packageName: String): ImageBitmap? {

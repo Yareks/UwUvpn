@@ -51,7 +51,21 @@ pub extern "system" fn Java_app_velox_vpn_core_VeloxNative_getStateSnapshot(
 ) -> jstring {
     guarded(&mut env, |e| {
         let reg = jstr_in(e, &target_region);
-        ENGINE.get_state_snapshot(&reg, whitelist_mode != 0)
+        ENGINE.get_state_snapshot_ex(&reg, whitelist_mode != 0, false)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_app_velox_vpn_core_VeloxNative_getStateSnapshotEx(
+    mut env: JNIEnv,
+    _class: JClass,
+    target_region: JString,
+    whitelist_mode: jboolean,
+    include_logs: jboolean,
+) -> jstring {
+    guarded(&mut env, |e| {
+        let reg = jstr_in(e, &target_region);
+        ENGINE.get_state_snapshot_ex(&reg, whitelist_mode != 0, include_logs != 0)
     })
 }
 
@@ -146,20 +160,91 @@ pub extern "system" fn Java_app_velox_vpn_core_VeloxNative_buildTunConfig(
     whitelist_mode: jboolean,
     bypass_ru: jboolean,
     fragment_tls: jboolean,
+    adblock: jboolean,
+    dual_channel: jboolean,
+    idle_power_save: jboolean,
     local_socks_port: jint,
+    socks_user: JString,
+    socks_pass: JString,
 ) -> jstring {
     guarded(&mut env, |e| {
         let reg = jstr_in(e, &target_region);
         let pid = jstr_in(e, &pinned_node_id);
-        ENGINE.build_tun_config(
+        let su = jstr_in(e, &socks_user);
+        let sp = jstr_in(e, &socks_pass);
+        ENGINE.build_tun_config_v16(
             &reg,
             &pid,
             whitelist_mode != 0,
             bypass_ru != 0,
             fragment_tls != 0,
+            adblock != 0,
+            dual_channel != 0,
+            idle_power_save != 0,
             local_socks_port.clamp(0, 65535) as u16,
+            &su,
+            &sp,
         )
     })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_app_velox_vpn_core_VeloxNative_configureHwid(
+    mut env: JNIEnv,
+    _class: JClass,
+    enabled: jboolean,
+    hwid: JString,
+    device_os: JString,
+    ver_os: JString,
+    device_model: JString,
+    app_locale: JString,
+) -> jstring {
+    guarded(&mut env, |e| {
+        let hw = jstr_in(e, &hwid);
+        let os = jstr_in(e, &device_os);
+        let ver = jstr_in(e, &ver_os);
+        let mdl = jstr_in(e, &device_model);
+        let loc = jstr_in(e, &app_locale);
+        ENGINE.configure_hwid(enabled != 0, &hw, &os, &ver, &mdl, &loc)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_app_velox_vpn_core_VeloxNative_verifyTunnelWeb(
+    mut env: JNIEnv,
+    _class: JClass,
+    local_socks_port: jint,
+    is_opera: jboolean,
+) -> jstring {
+    guarded(&mut env, |_| {
+        ENGINE.verify_tunnel_web(local_socks_port.clamp(1024, 65535) as u16, is_opera != 0)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_app_velox_vpn_core_VeloxNative_trimMemory(
+    _env: JNIEnv,
+    _class: JClass,
+    aggressive: jboolean,
+) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        ENGINE.trim_runtime_memory(aggressive != 0);
+    }));
+}
+
+#[no_mangle]
+pub extern "system" fn Java_app_velox_vpn_core_VeloxNative_setLocalSocksAuth(
+    mut env: JNIEnv,
+    _class: JClass,
+    port: jint,
+    user: JString,
+    pass: JString,
+) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let u = jstr_in(&mut env, &user);
+        let p = jstr_in(&mut env, &pass);
+        ENGINE.register_local_socks_auth(port.clamp(0, 65535) as u16, &u, &p);
+    }));
 }
 
 #[no_mangle]

@@ -3,7 +3,9 @@ package app.velox.vpn
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.ComponentCallbacks2
 import android.os.Build
+import app.velox.vpn.core.AppIconCache
 import app.velox.vpn.core.VeloxNative
 
 class VeloxApp : Application() {
@@ -17,15 +19,27 @@ class VeloxApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Zero eager native-library or thread-pool load here: Quick Settings Tile binds stay
+        // <1 MB pure Kotlin, while MainActivity & :vpn initialize Rust lazily off the UI thread.
         createNotificationChannels()
-        // Lightweight background init so first frame draws in <16 ms
-        Thread {
-            runCatching { VeloxNative.ensureInitialized(this) }
-        }.apply {
-            name = "velox-boot"
-            isDaemon = true
-            start()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
+            AppIconCache.clear()
+            VeloxNative.trimMemoryIfLoaded()
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            AppIconCache.trimHalf()
+            VeloxNative.trimMemoryIfLoaded()
         }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        AppIconCache.clear()
+        VeloxNative.trimMemoryIfLoaded()
     }
 
     private fun createNotificationChannels() {
@@ -41,6 +55,7 @@ class VeloxApp : Application() {
             setShowBadge(false)
             enableLights(false)
             enableVibration(false)
+            setSound(null, null)
         }
 
         val tgChannel = NotificationChannel(
@@ -52,6 +67,7 @@ class VeloxApp : Application() {
             setShowBadge(false)
             enableLights(false)
             enableVibration(false)
+            setSound(null, null)
         }
 
         nm.createNotificationChannels(listOf(vpnChannel, tgChannel))

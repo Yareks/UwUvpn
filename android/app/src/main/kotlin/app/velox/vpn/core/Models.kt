@@ -29,11 +29,14 @@ enum class RuntimeProfileMode(val code: String, val title: String, val subtitle:
 }
 
 data class AppSettings(
-    val region: String = "US",                // "US", "DE", "AUTO"
+    val region: String = "AUTO",              // AUTO, YT, WL, WARP, US, DE, NL, FI, GB, FR, SE, PL, CH, TR, JP, SG, CA, EU
     val pinnedNodeId: String = "",
+    val dualChannel: Boolean = true,          // Dual-Channel Primary + Hot-Standby zero-drop failover (strictly region-scoped!)
+    val sendHwid: Boolean = false,            // Opt-in Happ-compatible X-HWID device header for HWID-locked subscriptions
     val whitelistMode: Boolean = false,       // Mobile LTE/5G RU whitelist SNI priority
     val bypassRu: Boolean = true,             // Direct routing for RU banks, Gosuslugi, marketplaces
     val fragmentTls: Boolean = true,          // TCP TLS ClientHello anti-TSPU record splitting
+    val adblockYoutube: Boolean = true,       // 0%-ad YouTube geo-split (AL/MD/GL=RU) + zero-RAM domain adblock
     val autoHeal: Boolean = true,             // Automatic failover & dead-node replacement
     val profileMode: RuntimeProfileMode = RuntimeProfileMode.MOBILE,
     val tgMaxRttMs: Int = 1400,               // Strict Telegram DC resPQ ceiling (300..1400 ms)
@@ -51,6 +54,13 @@ data class VpnRuntimeState(
     val exitIp: String = "",
     val rttMs: Int = 0,
     val backupCount: Int = 0,
+    val dualChannelActive: Boolean = false,
+    val standbyNodeId: String = "",
+    val standbyNodeName: String = "",
+    val standbyProtocol: String = "",
+    val standbyCountry: String = "",
+    val standbyRttMs: Int = 0,
+    val failoverCount: Int = 0,
     val connectedSinceMs: Long = 0L,
     val connectingSinceMs: Long = 0L,
     val progressPercent: Int = 0,
@@ -80,6 +90,13 @@ data class VpnRuntimeState(
         put("exitIp", exitIp)
         put("rttMs", rttMs)
         put("backupCount", backupCount)
+        put("dualChannelActive", dualChannelActive)
+        put("standbyNodeId", standbyNodeId)
+        put("standbyNodeName", standbyNodeName)
+        put("standbyProtocol", standbyProtocol)
+        put("standbyCountry", standbyCountry)
+        put("standbyRttMs", standbyRttMs)
+        put("failoverCount", failoverCount)
         put("connectedSinceMs", connectedSinceMs)
         put("connectingSinceMs", connectingSinceMs)
         put("progressPercent", progressPercent)
@@ -105,6 +122,13 @@ data class VpnRuntimeState(
             exitIp = o.optString("exitIp", ""),
             rttMs = o.optInt("rttMs", 0),
             backupCount = o.optInt("backupCount", 0),
+            dualChannelActive = o.optBoolean("dualChannelActive", false),
+            standbyNodeId = o.optString("standbyNodeId", ""),
+            standbyNodeName = o.optString("standbyNodeName", ""),
+            standbyProtocol = o.optString("standbyProtocol", ""),
+            standbyCountry = o.optString("standbyCountry", ""),
+            standbyRttMs = o.optInt("standbyRttMs", 0),
+            failoverCount = o.optInt("failoverCount", 0),
             connectedSinceMs = o.optLong("connectedSinceMs", 0L),
             connectingSinceMs = o.optLong("connectingSinceMs", 0L),
             progressPercent = o.optInt("progressPercent", 0),
@@ -166,6 +190,8 @@ data class VpnNode(
     val fragmentEnabled: Boolean,
     val viaWarp: Boolean,
     val deviceVerified: Boolean,
+    val ytAdFree: Boolean,
+    val ytCountry: String,
     val sourceTier: Int,
     val failCount: Int,
 ) {
@@ -187,6 +213,8 @@ data class VpnNode(
             fragmentEnabled = o.optBoolean("fragment_enabled", false),
             viaWarp = o.optBoolean("via_warp", false),
             deviceVerified = o.optBoolean("device_verified", false),
+            ytAdFree = o.optBoolean("yt_ad_free", false),
+            ytCountry = o.optString("yt_country", ""),
             sourceTier = o.optInt("source_tier", 1),
             failCount = o.optInt("fail_count", 0),
         )
@@ -237,7 +265,20 @@ data class SubSourceItem(
     val userinfo: String = "",
     val cachedCount: Int = 0,
     val lastSyncUnix: Long = 0L,
+    val encryptedKind: String = "",
+    val bodyEncrypted: Boolean = false,
+    val uploadBytes: Long = 0L,
+    val downloadBytes: Long = 0L,
+    val totalBytes: Long = 0L,
+    val expireUnix: Long = 0L,
+    val updateIntervalHours: Int = 0,
+    val supportUrl: String = "",
+    val webPageUrl: String = "",
+    val announce: String = "",
+    val hwidStatus: String = "",
 ) {
+    val usedBytes: Long get() = (uploadBytes.coerceAtLeast(0L) + downloadBytes.coerceAtLeast(0L))
+
     companion object {
         fun fromJson(o: JSONObject): SubSourceItem = SubSourceItem(
             name = o.optString("name"),
@@ -249,6 +290,17 @@ data class SubSourceItem(
             userinfo = o.optString("userinfo", ""),
             cachedCount = o.optInt("cached_count", 0),
             lastSyncUnix = o.optLong("last_sync_unix", 0L),
+            encryptedKind = o.optString("encrypted_kind", ""),
+            bodyEncrypted = o.optBoolean("body_encrypted", false),
+            uploadBytes = o.optLong("upload_bytes", 0L),
+            downloadBytes = o.optLong("download_bytes", 0L),
+            totalBytes = o.optLong("total_bytes", 0L),
+            expireUnix = o.optLong("expire_unix", 0L),
+            updateIntervalHours = o.optInt("update_interval_hours", 0),
+            supportUrl = o.optString("support_url", ""),
+            webPageUrl = o.optString("web_page_url", ""),
+            announce = o.optString("announce", ""),
+            hwidStatus = o.optString("hwid_status", ""),
         )
     }
 }
@@ -293,6 +345,8 @@ data class EngineSnapshot(
     val customSubCount: Int = 0,
     val deviceVerifiedCount: Int = 0,
     val whitelistVerifiedCount: Int = 0,
+    val ytAdFreeCount: Int = 0,
+    val ytAdFreeLiveCount: Int = 0,
     val manifestUrl: String = "",
     val hasWarpWg: Boolean = false,
     val hasWarpMasque: Boolean = false,
@@ -305,20 +359,26 @@ data class EngineSnapshot(
     val bridgeLink: String = "tg://socks?server=127.0.0.1&port=10809",
     val wsAvailable: Boolean = false,
     val wsRttMs: Int = 0,
+    val hwidEnabled: Boolean = false,
+    val hwidShort: String = "",
     val logs: List<String> = emptyList(),
 ) {
     companion object {
         fun parse(raw: String): EngineSnapshot = runCatching {
             val o = JSONObject(raw)
+            val allNodes = o.optJSONArray("allVpnNodes").mapObjects(VpnNode::fromJson)
+            val primaryNodes = o.optJSONArray("vpnNodes")?.mapObjects(VpnNode::fromJson) ?: allNodes
             EngineSnapshot(
-                vpnNodes = o.optJSONArray("vpnNodes").mapObjects(VpnNode::fromJson),
-                allVpnNodes = o.optJSONArray("allVpnNodes").mapObjects(VpnNode::fromJson),
+                vpnNodes = primaryNodes,
+                allVpnNodes = allNodes.ifEmpty { primaryNodes },
                 tgProxies = o.optJSONArray("tgProxies").mapObjects(TgProxy::fromJson),
                 sources = o.optJSONArray("sources").mapObjects(SubSourceItem::fromJson),
                 customVpnCount = o.optInt("customVpnCount", 0),
                 customSubCount = o.optInt("customSubCount", 0),
                 deviceVerifiedCount = o.optInt("deviceVerifiedCount", 0),
                 whitelistVerifiedCount = o.optInt("whitelistVerifiedCount", 0),
+                ytAdFreeCount = o.optInt("ytAdFreeCount", 0),
+                ytAdFreeLiveCount = o.optInt("ytAdFreeLiveCount", 0),
                 manifestUrl = o.optString("manifestUrl", ""),
                 hasWarpWg = o.optBoolean("hasWarpWg", false),
                 hasWarpMasque = o.optBoolean("hasWarpMasque", false),
@@ -331,6 +391,8 @@ data class EngineSnapshot(
                 bridgeLink = o.optString("bridgeLink", "tg://socks?server=127.0.0.1&port=10809"),
                 wsAvailable = o.optBoolean("wsAvailable", false),
                 wsRttMs = o.optInt("wsRttMs", 0),
+                hwidEnabled = o.optBoolean("hwidEnabled", false),
+                hwidShort = o.optString("hwidValue", "").take(12),
                 logs = o.optJSONArray("logs").mapStrings(),
             )
         }.getOrDefault(EngineSnapshot())
@@ -410,30 +472,130 @@ fun JSONArray?.mapStrings(): List<String> {
     return out
 }
 
+data class RegionOption(
+    val code: String,
+    val flag: String,
+    val shortLabel: String,
+    val fullLabel: String,
+)
+
+val SELECTABLE_REGIONS: List<RegionOption> = listOf(
+    RegionOption("AUTO", "⚡", "Авто", "Авто (лучший)"),
+    RegionOption("YT", "📺", "YT без рекл.", "YouTube без рекламы (0%)"),
+    RegionOption("WL", "🛡️", "БС РФ", "Белые списки РФ"),
+    RegionOption("FI", "🇫🇮", "Финляндия", "Финляндия"),
+    RegionOption("NL", "🇳🇱", "Нидерланды", "Нидерланды"),
+    RegionOption("DE", "🇩🇪", "Германия", "Германия"),
+    RegionOption("US", "🇺🇸", "США", "США"),
+    RegionOption("GB", "🇬🇧", "Британия", "Великобритания"),
+    RegionOption("FR", "🇫🇷", "Франция", "Франция"),
+    RegionOption("SE", "🇸🇪", "Швеция", "Швеция"),
+    RegionOption("PL", "🇵🇱", "Польша", "Польша"),
+    RegionOption("CH", "🇨🇭", "Швейцария", "Швейцария"),
+    RegionOption("TR", "🇹🇷", "Турция", "Турция"),
+    RegionOption("JP", "🇯🇵", "Япония", "Япония"),
+    RegionOption("SG", "🇸🇬", "Сингапур", "Сингапур"),
+    RegionOption("CA", "🇨🇦", "Канада", "Канада"),
+    RegionOption("WARP", "☁️", "WARP / MASQUE", "Cloudflare WARP / MASQUE"),
+)
+
+enum class VpnProtoFilter(val label: String) {
+    ALL("Все"),
+    YT_NOADS("📺 YT 0%"),
+    REALITY("Reality"),
+    XHTTP("XHTTP"),
+    HY2("Hysteria 2"),
+    GRPC_WS("gRPC / WS"),
+    WARP("WARP / MASQUE"),
+    CHAIN("2-Hop Chain"),
+    OPERA("Opera"),
+    WL("БС РФ"),
+    OTHER("Trojan / SS / WG"),
+    CUSTOM("Мои");
+
+    fun matches(n: VpnNode): Boolean {
+        val dp = n.displayProtocol.lowercase()
+        val p = n.protocol.lowercase()
+        return when (this) {
+            ALL -> true
+            YT_NOADS -> n.ytAdFree
+            REALITY -> dp.contains("reality") && !dp.contains("xhttp") && !n.viaWarp
+            XHTTP -> dp.contains("xhttp")
+            HY2 -> p == "hysteria" || dp.contains("hysteria")
+            GRPC_WS -> dp.contains("grpc") || dp.contains("ws") || dp.contains("httpupgrade")
+            WARP -> dp.startsWith("warp") || p == "masque"
+            CHAIN -> n.viaWarp
+            OPERA -> dp.contains("opera")
+            WL -> n.whitelistFriendly && !n.viaWarp
+            OTHER -> p in setOf("trojan", "shadowsocks", "vmess", "wireguard", "socks", "http") &&
+                !dp.contains("opera") && !dp.startsWith("warp")
+            CUSTOM -> n.sourceTier == 0
+        }
+    }
+}
+
+enum class VpnSortMode(val label: String) {
+    SMART("★ Умный"),
+    PING("⚡ Пинг"),
+    SPEED("🚀 Скорость"),
+    COUNTRY("🌍 Страна"),
+}
+
 fun countryFlag(code: String): String = when (code.uppercase()) {
     "US" -> "🇺🇸"
     "DE" -> "🇩🇪"
     "NL" -> "🇳🇱"
     "FI" -> "🇫🇮"
     "SE" -> "🇸🇪"
+    "NO" -> "🇳🇴"
+    "DK" -> "🇩🇰"
+    "IS" -> "🇮🇸"
     "AT" -> "🇦🇹"
     "CH" -> "🇨🇭"
     "FR" -> "🇫🇷"
-    "GB" -> "🇬🇧"
+    "GB", "UK" -> "🇬🇧"
+    "IE" -> "🇮🇪"
     "CA" -> "🇨🇦"
     "EE" -> "🇪🇪"
-    "ES" -> "🇪🇸"
-    "PL" -> "🇵🇱"
-    "CZ" -> "🇨🇿"
     "LV" -> "🇱🇻"
     "LT" -> "🇱🇹"
+    "ES" -> "🇪🇸"
+    "PT" -> "🇵🇹"
+    "PL" -> "🇵🇱"
+    "CZ" -> "🇨🇿"
+    "SK" -> "🇸🇰"
     "IT" -> "🇮🇹"
     "HU" -> "🇭🇺"
-    "RU" -> "🇷🇺"
+    "RO" -> "🇷🇴"
+    "BG" -> "🇧🇬"
+    "MD" -> "🇲🇩"
+    "AL" -> "🇦🇱"
+    "AM" -> "🇦🇲"
+    "MC" -> "🇲🇨"
+    "AD" -> "🇦🇩"
+    "BY" -> "🇧🇾"
+    "UZ" -> "🇺🇿"
+    "KG" -> "🇰🇬"
+    "MN" -> "🇲🇳"
     "BE" -> "🇧🇪"
-    "NO" -> "🇳🇴"
-    "DK" -> "🇩🇰"
-    "CF" -> "☁️"
+    "LU" -> "🇱🇺"
+    "TR" -> "🇹🇷"
+    "JP" -> "🇯🇵"
+    "SG" -> "🇸🇬"
+    "KR" -> "🇰🇷"
+    "HK" -> "🇭🇰"
+    "TW" -> "🇹🇼"
+    "IN" -> "🇮🇳"
+    "AE" -> "🇦🇪"
+    "IL" -> "🇮🇱"
+    "KZ" -> "🇰🇿"
+    "AU" -> "🇦🇺"
+    "BR" -> "🇧🇷"
+    "RU" -> "🇷🇺"
+    "EU" -> "🇪🇺"
+    "YT" -> "📺"
+    "WL" -> "🛡️"
+    "WARP", "CF" -> "☁️"
     "AUTO" -> "⚡"
     else -> "🌐"
 }
@@ -448,9 +610,43 @@ fun formatEtaRu(seconds: Int): String {
 }
 
 fun regionTitleRu(code: String): String = when (code.uppercase()) {
+    "AUTO" -> "Авто (все страны)"
+    "YT" -> "YouTube без рекламы"
+    "WL" -> "Белые списки РФ"
+    "AL" -> "Албания"
+    "AM" -> "Армения"
+    "LU" -> "Люксембург"
+    "MC" -> "Монако"
+    "BY" -> "Беларусь"
+    "WARP" -> "WARP / MASQUE"
+    "EU" -> "Европа"
     "US" -> "США"
     "DE" -> "Германия"
-    "AUTO" -> "Авто (US/DE)"
+    "NL" -> "Нидерланды"
+    "FI" -> "Финляндия"
+    "GB", "UK" -> "Великобритания"
+    "FR" -> "Франция"
+    "SE" -> "Швеция"
+    "NO" -> "Норвегия"
+    "PL" -> "Польша"
+    "CH" -> "Швейцария"
+    "AT" -> "Австрия"
+    "TR" -> "Турция"
+    "JP" -> "Япония"
+    "SG" -> "Сингапур"
+    "CA" -> "Канада"
+    "KR" -> "Корея"
+    "HK" -> "Гонконг"
+    "ES" -> "Испания"
+    "IT" -> "Италия"
+    "CZ" -> "Чехия"
+    "HU" -> "Венгрия"
+    "EE" -> "Эстония"
+    "LV" -> "Латвия"
+    "KZ" -> "Казахстан"
+    "AE" -> "ОАЭ"
+    "MD" -> "Молдова"
+    "RU" -> "Россия"
     else -> code
 }
 

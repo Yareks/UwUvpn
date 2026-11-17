@@ -2,14 +2,19 @@
 
 use crate::diag::{
     clear_diag_logs, diag_err, diag_info, diag_log, diag_ok, diag_warn, fmt_endpoint,
-    read_diag_logs, set_log_dir, PROBE_PROGRESS,
+    read_diag_logs, set_log_dir, write_file_atomic_locked, PROBE_PROGRESS,
 };
-use crate::net_util::fetch_subscription_smart;
+use crate::happ_compat::{
+    fetch_url_without_fragment, unwrap_or_decrypt_subscription, HwidIdentityConfig,
+};
+use crate::net_util::{
+    fetch_subscription_smart_ex, prune_network_caches, set_local_socks_auth,
+};
 use crate::opera::{provision_opera_endpoints, OperaSessionCache};
 use crate::sources::{
     content_hash_short, default_sources, extract_vpn_uris_from_subscription,
     fetch_remote_manifest, fetch_vpn_candidates, is_dummy_banner_uri, is_rf_blocked_sni,
-    is_whitelist_remark, unwrap_subscription_url, SubSource, VerifiedVpnNode, VpnCandidate,
+    is_whitelist_remark, SubSource, VerifiedVpnNode, VpnCandidate,
 };
 use crate::tg_bridge::{probe_tg_ws_direct, start_tg_bridge, TgLocalBridge};
 use crate::tg_checker::{
@@ -23,9 +28,10 @@ use crate::vpn_probe::{
 };
 use crate::warp::{provision_warp_account, WarpAccountCache};
 use crate::xray_config::{
-    build_batch_probe_config, build_production_tun_config_ex, candidate_to_warp_chain,
-    opera_endpoints_to_candidates, opera_endpoints_to_warp_chain_candidates,
-    parse_share_uri_to_candidate, warp_account_to_candidates,
+    build_batch_probe_config, build_production_tun_config_v16, candidate_to_warp_chain,
+    node_matches_strict_region, opera_endpoints_to_candidates,
+    opera_endpoints_to_warp_chain_candidates, parse_share_uri_to_candidate,
+    parse_xray_json_config_to_candidates, warp_account_to_candidates,
 };
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -39,18 +45,45 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::runtime::{Builder, Runtime};
 
-/// Bounded 2-worker Tokio runtime: minimal background thread & RAM footprint on Android.
+/// Ultra-lean Tokio runtime: 1 worker in the long-lived `:vpn` service process (minimum idle threads
+/// & RAM — `xray-rust` handles packet I/O on its own worker), 2 workers in UI/CLI for parallel feeds.
 pub static TOKIO_RT: Lazy<Runtime> = Lazy::new(|| {
     let _ = rustls::crypto::ring::default_provider().install_default();
+    let is_vpn_proc = fs::read_to_string("/proc/self/cmdline")
+        .map(|s| s.split('\0').next().unwrap_or("").ends_with(":vpn"))
+        .unwrap_or(false);
+    let workers = if is_vpn_proc { 1 } else { 2 };
+    let max_blocking = if is_vpn_proc { 2 } else { 3 };
     Builder::new_multi_thread()
-        .worker_threads(2)
-        .max_blocking_threads(4)
+        .worker_threads(workers)
+        .max_blocking_threads(max_blocking)
         .thread_name("velox-io")
-        .thread_stack_size(512 * 1024)
+        .thread_stack_size(384 * 1024)
         .enable_all()
         .build()
         .expect("tokio runtime init")
 });
+
+/// Poison-recovering read/write lock helpers — never panic inside JNI even after a caught unwind!
+fn read_data(lock: &RwLock<PersistedData>) -> std::sync::RwLockReadGuard<'_, PersistedData> {
+    lock.read().unwrap_or_else(|e| e.into_inner())
+}
+fn write_data(lock: &RwLock<PersistedData>) -> std::sync::RwLockWriteGuard<'_, PersistedData> {
+    lock.write().unwrap_or_else(|e| e.into_inner())
+}
+
+fn file_stamp(path: &std::path::Path) -> (u128, u64) {
+    let Ok(md) = fs::metadata(path) else {
+        return (0, 0);
+    };
+    let mtime_ns = md
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    (mtime_ns, md.len())
+}
 
 pub static ENGINE: Lazy<EngineController> = Lazy::new(EngineController::new);
 
@@ -69,6 +102,9 @@ pub struct PersistedData {
     pub blacklist: HashMap<String, u64>,
     pub last_vpn_refresh_unix: u64,
     pub last_tg_refresh_unix: u64,
+    /// Optional opt-in Happ-compatible HWID & device identity settings (OFF by default for privacy!).
+    #[serde(default)]
+    pub hwid_config: HwidIdentityConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -82,6 +118,8 @@ pub struct BootstrapSeed {
 pub struct EngineController {
     pub data_dir: RwLock<Option<PathBuf>>,
     pub data: RwLock<PersistedData>,
+    /// Last loaded `(mtime_ns, len)` of `velox_state.json` — skips redundant 150 KB JSON re-parse in 0.01 ms!
+    pub last_state_stamp: Mutex<(u128, u64)>,
     pub pending_batches: Mutex<HashMap<String, Vec<VpnCandidate>>>,
     pub pending_seed_batches: Mutex<HashMap<String, Vec<VerifiedVpnNode>>>,
     pub tg_progress: Arc<TgCheckProgress>,
@@ -105,9 +143,26 @@ fn socks_opt(port: u16) -> Option<SocketAddr> {
 }
 
 fn normalize_region(target_region: &str) -> &'static str {
-    match target_region.to_ascii_uppercase().as_str() {
+    match target_region.trim().to_ascii_uppercase().as_str() {
+        "YT" | "NOADS" | "ADFREE" => "YT",
+        "AL" => "AL",
+        "MD" => "MD",
         "US" => "US",
         "DE" => "DE",
+        "NL" => "NL",
+        "FI" => "FI",
+        "GB" | "UK" => "GB",
+        "FR" => "FR",
+        "SE" => "SE",
+        "PL" => "PL",
+        "CH" | "AT" => "CH",
+        "TR" => "TR",
+        "JP" => "JP",
+        "SG" => "SG",
+        "CA" => "CA",
+        "EU" => "EU",
+        "WL" => "WL",
+        "WARP" => "WARP",
         _ => "AUTO",
     }
 }
@@ -121,13 +176,14 @@ impl Default for EngineController {
 impl EngineController {
     pub fn new() -> Self {
         let init = PersistedData {
-            version: 4,
+            version: 7,
             sources: default_sources(),
             ..Default::default()
         };
         Self {
             data_dir: RwLock::new(None),
             data: RwLock::new(init),
+            last_state_stamp: Mutex::new((0, 0)),
             pending_batches: Mutex::new(HashMap::new()),
             pending_seed_batches: Mutex::new(HashMap::new()),
             tg_progress: Arc::new(TgCheckProgress::default()),
@@ -146,43 +202,85 @@ impl EngineController {
 
         let state_file = path.join("velox_state.json");
         let is_reload = seed_json.trim().is_empty() && state_file.exists();
+        let disk_stamp = file_stamp(&state_file);
+
+        // O(1) zero-allocation cross-process reload fast path: if `velox_state.json` `(mtime_ns, len)`
+        // hasn't changed since our last read/save, return cached counts in ~5 microseconds!
+        if is_reload && disk_stamp.1 > 0 {
+            let unchanged = self
+                .last_state_stamp
+                .lock()
+                .ok()
+                .is_some_and(|st| *st == disk_stamp);
+            if unchanged {
+                let g = read_data(&self.data);
+                let vpn_cnt = g.vpn_nodes.len();
+                let dev_cnt = g.vpn_nodes.iter().filter(|n| n.device_verified).count();
+                let tg_cnt = g.tg_proxies.len();
+                return json!({
+                    "ok": true,
+                    "cached": true,
+                    "vpnCount": vpn_cnt,
+                    "deviceVerifiedCount": dev_cnt,
+                    "tgCount": tg_cnt
+                })
+                .to_string();
+            }
+        }
+
         let mut loaded = if let Ok(bytes) = fs::read(&state_file) {
             serde_json::from_slice::<PersistedData>(&bytes).unwrap_or_default()
         } else {
             PersistedData::default()
         };
 
-        // Seamless upgrade migration (v1/v2/v3 -> v4 / VeloxVPN v1.3.0):
-        // - Preserve Cloudflare WARP MASQUE credentials, user custom subscriptions & live nodes
-        // - Reset transient fail_count from v1.2 startup probe race
-        // - Retire superseded/dead builtin feed URLs while merging all 38 new 2026 RF-WL/US/DE/TG feeds
+        // Seamless upgrade migration (v1..v6 -> v7 / VeloxVPN v1.6.0):
+        // - Preserve Cloudflare WARP MASQUE credentials, custom subscriptions, HWID & working nodes
+        // - Prune removed 404 built-in feeds & stale Opera relays, keep 0%-ad YT tags & Dual-Channel pool
+        let now_mig = unix_now();
         let mut mutated = false;
-        if loaded.version < 4 {
+        if loaded.version < 7 {
             let prev_ver = loaded.version;
-            loaded.version = 4;
-            loaded
-                .vpn_nodes
-                .retain(|n| n.source_tier == 0 || !is_rf_blocked_sni(&n.sni));
+            loaded.version = 7;
+            loaded.vpn_nodes.retain(|n| {
+                let drop_opera = matches!(n.protocol.as_str(), "opera" | "http")
+                    && (prev_ver < 6
+                        || (n.verified_unix > 0 && now_mig.saturating_sub(n.verified_unix) > 45 * 60));
+                let drop_ru_public = n.source_tier != 0 && n.exit_country == "RU";
+                !drop_opera && !drop_ru_public && (n.source_tier == 0 || !is_rf_blocked_sni(&n.sni))
+            });
             for n in &mut loaded.vpn_nodes {
-                if n.device_verified {
+                if n.via_warp {
+                    n.whitelist_friendly = false;
+                }
+                if n.device_verified && prev_ver < 6 {
                     n.fail_count = 0;
                 }
-                if is_whitelist_remark(&n.name) && !is_rf_blocked_sni(&n.sni) {
+                if !n.via_warp && is_whitelist_remark(&n.name) && !is_rf_blocked_sni(&n.sni) {
                     n.whitelist_friendly = true;
                 }
+                if matches!(n.exit_country.as_str(), "AL" | "MD" | "MC" | "AD")
+                    && !matches!(n.protocol.as_str(), "opera" | "http")
+                {
+                    n.yt_ad_free = true;
+                    if n.yt_country.is_empty() {
+                        n.yt_country = n.exit_country.clone();
+                    }
+                }
             }
-            // Replace outdated builtin TG/VPN URLs while keeping 100% of user's `!s.builtin` sources!
             let valid_builtins: HashSet<String> =
                 default_sources().into_iter().map(|s| s.url).collect();
             loaded
                 .sources
                 .retain(|s| !s.builtin || valid_builtins.contains(&s.url));
-            loaded.blacklist.clear();
+            if prev_ver < 6 {
+                loaded.blacklist.clear();
+            }
             if prev_ver > 0 {
                 diag_info(
                     "SYS",
                     format!(
-                        "Обновление v1.3 (БС РФ + Smart Sync + Подписки): WARP={}, живых VPN={}, своих подписок={}",
+                        "Обновление v1.6 (Dual-Channel 0мс + Happ crypt1–5 + Zero-Idle): WARP={}, живых VPN={}, подписок={}",
                         loaded.warp.has_masque(),
                         loaded.vpn_nodes.iter().filter(|n| n.device_verified).count(),
                         loaded.sources.iter().filter(|s| !s.builtin).count()
@@ -200,13 +298,19 @@ impl EngineController {
             }
         }
 
-        // Prune expired blacklist entries (> 90 min old)
+        // Prune expired blacklist entries (> 90 min old) and expired Opera relays (> 45 min old)
         let now = unix_now();
         let bl_before = loaded.blacklist.len();
         loaded
             .blacklist
             .retain(|_, ts| now.saturating_sub(*ts) < 5400);
-        if loaded.blacklist.len() != bl_before {
+        let vpn_before = loaded.vpn_nodes.len();
+        loaded.vpn_nodes.retain(|n| {
+            !(n.protocol == "opera"
+                && n.verified_unix > 0
+                && now.saturating_sub(n.verified_unix) > 45 * 60)
+        });
+        if loaded.blacklist.len() != bl_before || loaded.vpn_nodes.len() != vpn_before {
             mutated = true;
         }
 
@@ -246,11 +350,14 @@ impl EngineController {
         let dev_verified_cnt = loaded.vpn_nodes.iter().filter(|n| n.device_verified).count();
         let tg_cnt = loaded.tg_proxies.len();
 
-        if let Ok(mut g) = self.data.write() {
+        {
+            let mut g = write_data(&self.data);
             *g = loaded;
         }
         if mutated || !is_reload {
             self.save();
+        } else if let Ok(mut st) = self.last_state_stamp.lock() {
+            *st = disk_stamp;
         }
 
         // Log engine initialization ONLY once per process creation (never spam on cross-process reloads!)
@@ -258,7 +365,7 @@ impl EngineController {
             diag_info(
                 "SYS",
                 format!(
-                    "Velox Engine v1.3 готов (VPN: {vpn_cnt} [живых: {dev_verified_cnt}], TG: {tg_cnt}, БС-РФ + SmartSync)"
+                    "Velox Engine v1.6 готов (VPN: {vpn_cnt} [живых: {dev_verified_cnt}], TG: {tg_cnt}, Dual-Channel 0мс + Happ crypt1–5)"
                 ),
             );
         }
@@ -272,21 +379,75 @@ impl EngineController {
         .to_string()
     }
 
+    /// Cross-process atomic `flock` + PID-unique temp file write (eliminates UI <-> `:vpn` races!).
     pub fn save(&self) {
         let Some(dir) = self.data_dir.read().ok().and_then(|g| g.clone()) else {
             return;
         };
-        let Ok(snapshot) = self.data.read().map(|g| serde_json::to_vec(&*g)) else {
+        let Ok(bytes) = serde_json::to_vec(&*read_data(&self.data)) else {
             return;
         };
-        let Ok(bytes) = snapshot else {
-            return;
-        };
-        let tmp = dir.join("velox_state.json.tmp");
         let dst = dir.join("velox_state.json");
-        if fs::write(&tmp, &bytes).is_ok() {
-            let _ = fs::rename(&tmp, &dst);
+        if write_file_atomic_locked(&dst, &bytes) {
+            if let Ok(mut st) = self.last_state_stamp.lock() {
+                *st = file_stamp(&dst);
+            }
         }
+    }
+
+    /// Release all transient probe batches, DNS/ETag HTTP caches, and excess Vec capacity
+    /// once the tunnel is connected or Android signals `onTrimMemory()` — zero feature loss!
+    pub fn trim_runtime_memory(&self, aggressive: bool) {
+        if let Ok(mut m) = self.pending_batches.lock() {
+            m.clear();
+            m.shrink_to_fit();
+        }
+        if let Ok(mut m) = self.pending_seed_batches.lock() {
+            m.clear();
+            m.shrink_to_fit();
+        }
+        prune_network_caches(aggressive);
+        if aggressive {
+            let mut g = write_data(&self.data);
+            g.vpn_nodes.shrink_to_fit();
+            g.tg_proxies.shrink_to_fit();
+            g.sources.shrink_to_fit();
+            g.blacklist.shrink_to_fit();
+        }
+    }
+
+    /// Configure opt-in Happ-compatible `X-HWID` & device headers (used on HWID-locked paid subs).
+    pub fn configure_hwid(
+        &self,
+        enabled: bool,
+        hwid: &str,
+        device_os: &str,
+        ver_os: &str,
+        device_model: &str,
+        app_locale: &str,
+    ) -> String {
+        {
+            let mut g = write_data(&self.data);
+            let _ = device_os;
+            g.hwid_config = HwidIdentityConfig {
+                enabled,
+                hwid: hwid.trim().chars().take(128).collect(),
+                os_version: ver_os.trim().chars().take(32).collect(),
+                device_model: device_model.trim().chars().take(64).collect(),
+                locale: if app_locale.trim().is_empty() {
+                    "ru-RU".into()
+                } else {
+                    app_locale.trim().chars().take(16).collect()
+                },
+            };
+        }
+        self.save();
+        json!({ "ok": true, "enabled": enabled }).to_string()
+    }
+
+    /// Register ephemeral per-session RFC 1929 SOCKS5 auth credentials for `127.0.0.1:local_socks_port`.
+    pub fn register_local_socks_auth(&self, port: u16, user: &str, pass: &str) {
+        set_local_socks_auth(port, user, pass);
     }
 
     /// Build a fast parallel probe config for unverified bundled seed nodes so initial cold-start
@@ -301,7 +462,7 @@ impl EngineController {
         let region = normalize_region(target_region);
         let cap = max_count.clamp(4, 18);
         let seeds: Vec<VerifiedVpnNode> = {
-            let g = self.data.read().unwrap();
+            let g = read_data(&self.data);
             let mut list: Vec<VerifiedVpnNode> = g
                 .vpn_nodes
                 .iter()
@@ -406,7 +567,7 @@ impl EngineController {
 
         {
             let now = unix_now();
-            let mut g = self.data.write().unwrap();
+            let mut g = write_data(&self.data);
             // Remove dead tested seeds immediately so they NEVER delay connection again!
             let dead_eps: Vec<String> = g
                 .vpn_nodes
@@ -450,11 +611,12 @@ impl EngineController {
         active_socks_port: u16,
     ) -> String {
         let region = normalize_region(target_region);
-        let max_batch = max_batch.clamp(12, 46);
+        let eff_wl = whitelist_mode || region == "WL";
+        let max_batch = max_batch.clamp(12, 54);
         let proxy = socks_opt(active_socks_port);
 
         let (sources, custom_uris, existing_opera, existing_warp, bl_set, skip_live_eps, manifest_url) = {
-            let g = self.data.read().unwrap();
+            let g = read_data(&self.data);
             let now = unix_now();
             let bl: HashSet<String> = g
                 .blacklist
@@ -519,32 +681,35 @@ impl EngineController {
                 }
             };
 
-            // Tier-0 (user subs) + Tier-1 (25 auto-updated RF Whitelist, US, DE, SS2022, Trojan, Reality, XHTTP, Hy2 feeds)
+            // Tier-0 (user subs) + Tier-1 (53 curated feeds: 15 countries + RF WL + Reality + XHTTP + Hy2 + Trojan + VMess + SS2022 + WG)
             let tier1_fut = fetch_vpn_candidates(
                 &sources,
                 region,
-                whitelist_mode,
+                eff_wl,
                 fragment_tls,
                 proxy,
                 &bl_set,
             );
 
-            // Tier-2: Free official Opera SurfEasy HTTPS proxies (strictly time-boxed to 3.2s so slow API NEVER delays connect!)
+            // Tier-2: Free official Opera SurfEasy HTTPS proxies across US, EU (NL) & Asia (SG)
             let opera_fut = async {
-                if whitelist_mode {
+                if eff_wl {
                     return None;
                 }
                 if existing_opera.is_fresh() {
                     Some(existing_opera.clone())
                 } else {
                     match tokio::time::timeout(
-                        std::time::Duration::from_millis(3200),
+                        std::time::Duration::from_millis(3400),
                         provision_opera_endpoints(Some(&existing_opera), proxy),
                     )
                     .await
                     {
                         Ok(Ok(op)) => {
-                            diag_ok("OPERA", format!("Получено {} релеев Opera US/EU", op.endpoints.len()));
+                            diag_ok(
+                                "OPERA",
+                                format!("Получено {} релеев Opera US/EU/Asia", op.endpoints.len()),
+                            );
                             Some(op)
                         }
                         _ => None,
@@ -616,23 +781,33 @@ impl EngineController {
 
             let has_masque = warp_opt.as_ref().map(|w| w.has_masque()).unwrap_or(false);
 
-            // Trim Opera+MASQUE to 2 best slots (fast check, never hogs the batch!)
-            let opera_chain_cands: Vec<VpnCandidate> = if has_masque && !whitelist_mode {
+            // Opera+MASQUE 3-continent slots (US / EU-NL / Asia-SG — deduplicated 1 per region)
+            let opera_chain_cands: Vec<VpnCandidate> = if has_masque && !eff_wl {
                 opera_opt
                     .as_ref()
                     .map(|op| {
-                        let mut v = opera_endpoints_to_warp_chain_candidates(&op.endpoints, region);
-                        v.truncate(2);
-                        v
+                        let all_op = opera_endpoints_to_warp_chain_candidates(&op.endpoints, region);
+                        let cap = if region == "WARP" { 3usize } else { 2usize };
+                        let mut seen_reg = HashSet::new();
+                        let mut picked = Vec::new();
+                        for c in &all_op {
+                            if seen_reg.insert(c.region_hint.clone()) {
+                                picked.push(c.clone());
+                                if picked.len() >= cap {
+                                    break;
+                                }
+                            }
+                        }
+                        picked
                     })
                     .unwrap_or_default()
             } else {
                 Vec::new()
             };
 
-            // Chain custom TLS/SS/Trojan/VMess keys over MASQUE as extra fallback
+            // Chain custom TLS/SS/Trojan/VMess/SOCKS5 keys over MASQUE as extra fallback
             let mut custom_chain_cands = Vec::new();
-            if has_masque {
+            if has_masque && !eff_wl {
                 for cc in custom_cands
                     .iter()
                     .chain(all_cands.iter().filter(|c| c.source_tier == 0))
@@ -647,51 +822,55 @@ impl EngineController {
                 }
             }
 
-            // Echelon B: High-yield USA (US) & Germany (DE) SS2022/AEAD, Trojan-TLS, VLESS-TLS 2-hop over MASQUE!
-            // In normal mode: 15 slots across BOTH US & DE so switching US <-> DE is ALWAYS instant (0.1s)!
-            // In whitelist_mode: 6 backup slots so 34+ slots go straight to genuine Russian Whitelist SNI & CIDR!
+            // Echelon B: Multi-country 2-hop `MASQUE-Chain` (SS2022, Trojan, VLESS-TLS, VMess, SOCKS5)
+            // Unlocks RKN IP-blocked servers across FI, NL, DE, US, GB, FR, SE, PL, CH, TR, JP, SG, CA!
             let mut tier1_chain_cands: Vec<VpnCandidate> = Vec::new();
-            if has_masque {
+            if has_masque && !eff_wl {
                 let mut chain_seen_hosts = HashSet::new();
-                let (chain_cap, want_de, want_us, want_other) = if whitelist_mode {
-                    (6usize, 3usize, 3usize, 0usize)
-                } else {
-                    match region {
-                        "DE" => (15usize, 9usize, 5usize, 1usize),
-                        "US" => (15usize, 5usize, 9usize, 1usize),
-                        _ => (15usize, 7usize, 7usize, 1usize),
-                    }
-                };
-                let mut got_de = 0usize;
-                let mut got_us = 0usize;
-                let mut got_other = 0usize;
+                let mut per_region_cnt: HashMap<String, usize> = HashMap::new();
+                let chain_cap: usize = if region == "WARP" { 16 } else { 15 };
 
                 let mut chain_pool: Vec<&VpnCandidate> = all_cands
                     .iter()
                     .filter(|c| {
                         let h_low = c.host.to_ascii_lowercase();
-                        let ep = format!("{}:{}" , h_low, c.port);
+                        let ep = format!("{}:{}", h_low, c.port);
                         let wkey = format!("wchain:{ep}");
                         !bl_chain.contains(&wkey) && !skip_chain_live.contains(&ep)
                     })
                     .collect();
                 chain_pool.sort_by_key(|c| {
+                    let exact_reg = match region {
+                        "AUTO" | "WARP" => 0u8,
+                        "EU" => {
+                            if matches!(
+                                c.region_hint.as_str(),
+                                "FI" | "NL" | "DE" | "SE" | "GB" | "FR" | "PL" | "CH" | "AT"
+                            ) {
+                                0u8
+                            } else {
+                                1u8
+                            }
+                        }
+                        target => if c.region_hint == target { 0u8 } else { 1u8 },
+                    };
                     let proto_prio = match (c.protocol.as_str(), c.security.as_str()) {
                         ("shadowsocks", "ss2022") => 0u8,
-                        ("shadowsocks", _) => 1u8,
-                        ("trojan", "tls") => 2u8,
-                        ("vless", "tls") => 3u8,
+                        ("trojan", "tls") => 1u8,
+                        ("vless", "tls") => 2u8,
+                        ("shadowsocks", _) => 3u8,
                         ("vmess", "tls") => 4u8,
-                        _ => 5u8,
+                        ("socks", _) => 5u8,
+                        _ => 6u8,
                     };
                     let net_prio = match c.transport.as_str() {
                         "tcp" => 0u8,
-                        "ws" | "httpupgrade" => 1u8,
+                        "httpupgrade" | "ws" => 1u8,
                         "grpc" => 2u8,
                         _ => 3u8,
                     };
-                    let port_prio = if c.port == 443 || c.port == 8443 { 0u8 } else { 1u8 };
-                    (proto_prio, net_prio, port_prio)
+                    let port_prio = if matches!(c.port, 443 | 8443 | 2053) { 0u8 } else { 1u8 };
+                    (exact_reg, proto_prio, net_prio, port_prio)
                 });
 
                 for c in chain_pool {
@@ -709,14 +888,17 @@ impl EngineController {
                     {
                         continue;
                     }
-                    let slot_ok = match c.region_hint.as_str() {
-                        "DE" if got_de < want_de => true,
-                        "US" if got_us < want_us => true,
-                        "EU" if got_de < want_de => true,
-                        _ if got_other < want_other && tier1_chain_cands.len() >= 8 => true,
-                        _ => false,
+                    let rc = per_region_cnt.get(&c.region_hint).copied().unwrap_or(0);
+                    let max_for_reg = match region {
+                        "AUTO" | "EU" | "WARP" => {
+                            // Spread slots across many countries (2-3 each -> NL, FI, DE, US, GB, FR, SE, PL, TR, SG, JP!)
+                            if c.region_hint == "OTHER" { 1 } else { 3 }
+                        }
+                        target => {
+                            if c.region_hint == target { 10 } else { 2 }
+                        }
                     };
-                    if !slot_ok {
+                    if rc >= max_for_reg {
                         continue;
                     }
                     let host_key = format!("{}:{}", h_low, c.port);
@@ -724,18 +906,14 @@ impl EngineController {
                         continue;
                     }
                     if let Some(wc) = candidate_to_warp_chain(c) {
-                        match c.region_hint.as_str() {
-                            "DE" | "EU" => got_de += 1,
-                            "US" => got_us += 1,
-                            _ => got_other += 1,
-                        }
+                        *per_region_cnt.entry(c.region_hint.clone()).or_insert(0) += 1;
                         tier1_chain_cands.push(wc);
                     }
                 }
             }
 
-            // Direct Opera relay (1 slot on non-whitelist Wi-Fi)
-            let tier2_direct = if whitelist_mode {
+            // Direct Opera HTTPS+TLS+Fragment relay
+            let tier2_direct = if eff_wl {
                 Vec::new()
             } else {
                 opera_opt
@@ -749,21 +927,34 @@ impl EngineController {
                     .unwrap_or_default()
             };
 
-            // Direct Cloudflare WARP MASQUE (2 clean slots: primary H3 + primary H2+frag; skips dead .198.1 H2!)
-            let tier3_cands = if whitelist_mode {
+            // Direct Cloudflare WARP suite: MASQUE H3, MASQUE H3+Noise, MASQUE H2+Frag, WARP AWG+Noise!
+            let tier3_cands = if eff_wl {
                 Vec::new()
             } else {
                 warp_opt
                     .as_ref()
                     .map(|wp| {
-                        let mut v = warp_account_to_candidates(wp, fragment_tls);
-                        v.truncate(2);
-                        v
+                        let all_wp = warp_account_to_candidates(wp, fragment_tls);
+                        if region == "WARP" {
+                            // Showcase full WARP variety: H3 :443, H3+Noise, H3 :8443, H2 :443, H2 :8443, AWG :2408, AWG :500
+                            let mut picked: Vec<VpnCandidate> = all_wp.iter().take(6).cloned().collect();
+                            for w in all_wp.iter().filter(|c| c.protocol == "warp-wg").take(2) {
+                                picked.push(w.clone());
+                            }
+                            picked
+                        } else {
+                            // Always include H3 QUIC, H3+Noise, H2 TCP+Frag, and 1 WARP AWG Noise!
+                            let mut picked: Vec<VpnCandidate> = all_wp.iter().take(3).cloned().collect();
+                            if let Some(wg) = all_wp.iter().find(|c| c.protocol == "warp-wg") {
+                                picked.push(wg.clone());
+                            }
+                            picked
+                        }
                     })
                     .unwrap_or_default()
             };
 
-            let eff_max = max_batch.max(42).min(46);
+            let eff_max = max_batch.max(46).min(54);
             let reserved = custom_cands.len().min(6)
                 + custom_chain_cands.len().min(2)
                 + opera_chain_cands.len()
@@ -772,32 +963,34 @@ impl EngineController {
                 + tier3_cands.len();
             let tier1_direct_cap = eff_max
                 .saturating_sub(reserved)
-                .max(if whitelist_mode { 30 } else { 18 });
-            let tcp_scan_cap = if whitelist_mode { 280 } else { 220 };
+                .max(if eff_wl { 34 } else { 24 });
+            let tcp_scan_cap = if eff_wl { 300 } else { 260 };
 
-            // Echelon C: Direct Russian Whitelist (Минцифры SNI + VK/Yandex/CDN CIDR) + Custom Subs + Reality/XHTTP/Hy2!
+            // Echelon C: Direct 1-hop multi-protocol & multi-country harvest (Reality, XHTTP, Hy2, Trojan, VMess, SS2022, WG, WL-РФ)!
             let (mut alive_tier1, dead) = tcp_prefilter_candidates_ex(
                 all_cands.drain(..).collect(),
                 tcp_scan_cap,
                 tier1_direct_cap,
-                whitelist_mode,
+                eff_wl,
                 &skip_live_eps,
             )
             .await;
 
             let mut combined = Vec::with_capacity(eff_max);
             combined.extend(custom_cands.into_iter().take(6));
-            // In Белые списки РФ mode, put direct RF-whitelist & custom nodes FIRST!
-            if whitelist_mode {
+            if eff_wl {
                 combined.append(&mut alive_tier1);
-                combined.extend(custom_chain_cands.into_iter().take(2));
-                combined.extend(tier1_chain_cands);
-            } else {
-                combined.extend(custom_chain_cands.into_iter().take(2));
-                combined.extend(tier1_chain_cands);
-                combined.append(&mut alive_tier1);
-                combined.extend(opera_chain_cands);
+            } else if region == "WARP" {
                 combined.extend(tier3_cands);
+                combined.extend(tier1_chain_cands);
+                combined.extend(opera_chain_cands);
+                combined.append(&mut alive_tier1);
+            } else {
+                combined.append(&mut alive_tier1);
+                combined.extend(custom_chain_cands.into_iter().take(2));
+                combined.extend(tier1_chain_cands);
+                combined.extend(tier3_cands);
+                combined.extend(opera_chain_cands);
                 combined.extend(tier2_direct);
             }
             combined.truncate(eff_max);
@@ -808,7 +1001,7 @@ impl EngineController {
         // Persist refreshed Opera / WARP credentials, manifest sources, and dead IPs
         {
             let now = unix_now();
-            let mut g = self.data.write().unwrap();
+            let mut g = write_data(&self.data);
             if let Some(op) = new_opera {
                 g.opera = op;
             }
@@ -850,7 +1043,7 @@ impl EngineController {
             .to_string();
         }
 
-        let warp_snapshot = { self.data.read().unwrap().warp.clone() };
+        let warp_snapshot = { read_data(&self.data).warp.clone() };
         let probe_config = build_batch_probe_config(
             &selected,
             base_port,
@@ -944,7 +1137,7 @@ impl EngineController {
         let now = unix_now();
         let new_cnt = verified.len();
         let final_nodes = {
-            let mut g = self.data.write().unwrap();
+            let mut g = write_data(&self.data);
             for ep in failed_eps {
                 g.blacklist.insert(ep, now);
             }
@@ -955,26 +1148,37 @@ impl EngineController {
                 let new_ids: HashSet<String> = verified.iter().map(|n| n.id.clone()).collect();
                 let mut merged = verified.clone();
                 for old in &g.vpn_nodes {
+                    let max_age = if old.protocol == "opera" {
+                        45 * 60
+                    } else {
+                        10 * 3600
+                    };
                     if old.device_verified
                         && !new_ids.contains(&old.id)
                         && old.fail_count < 2
-                        && now.saturating_sub(old.verified_unix) < 6 * 3600
+                        && now.saturating_sub(old.verified_unix) < max_age
                     {
                         merged.push(old.clone());
                     }
                 }
                 merged.sort_by_key(|n| {
+                    let http_pen = if matches!(n.protocol.as_str(), "opera" | "http") {
+                        1u8
+                    } else {
+                        0u8
+                    };
                     (
                         !n.device_verified,
                         n.fail_count,
                         if n.source_tier == 0 { 0u8 } else { 1u8 },
                         if n.source_tier >= 4 { 1u8 } else { 0u8 },
                         region_match_rank(&n.exit_country, region),
+                        http_pen,
                         n.rtt_ms,
                     )
                 });
-                // Preserve up to 52 live verified nodes across Custom Subs + WL-РФ + US + DE + EU!
-                merged.truncate(52);
+                // Preserve up to 120 live verified nodes across 15+ countries & all protocols!
+                merged.truncate(120);
                 g.vpn_nodes = merged;
                 g.last_vpn_refresh_unix = now;
             } else {
@@ -1034,6 +1238,58 @@ impl EngineController {
         fragment_tls: bool,
         local_socks_port: u16,
     ) -> String {
+        self.build_tun_config_ex(
+            target_region,
+            pinned_node_id,
+            whitelist_mode,
+            bypass_ru,
+            fragment_tls,
+            true,
+            local_socks_port,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_tun_config_ex(
+        &self,
+        target_region: &str,
+        pinned_node_id: &str,
+        whitelist_mode: bool,
+        bypass_ru: bool,
+        fragment_tls: bool,
+        adblock: bool,
+        local_socks_port: u16,
+    ) -> String {
+        self.build_tun_config_v16(
+            target_region,
+            pinned_node_id,
+            whitelist_mode,
+            bypass_ru,
+            fragment_tls,
+            adblock,
+            true,
+            false,
+            local_socks_port,
+            "",
+            "",
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_tun_config_v16(
+        &self,
+        target_region: &str,
+        pinned_node_id: &str,
+        whitelist_mode: bool,
+        bypass_ru: bool,
+        fragment_tls: bool,
+        adblock: bool,
+        dual_channel: bool,
+        idle_power_save: bool,
+        local_socks_port: u16,
+        socks_user: &str,
+        socks_pass: &str,
+    ) -> String {
         let region = normalize_region(target_region);
         let pinned_opt = if pinned_node_id.trim().is_empty() {
             None
@@ -1041,8 +1297,13 @@ impl EngineController {
             Some(pinned_node_id.trim())
         };
 
+        // Register ephemeral local SOCKS5 password so internal probes & TG bridge authenticate cleanly
+        if local_socks_port > 0 {
+            set_local_socks_auth(local_socks_port, socks_user, socks_pass);
+        }
+
         let (all_nodes, warp_snapshot, last_refresh) = {
-            let g = self.data.read().unwrap();
+            let g = read_data(&self.data);
             (
                 g.vpn_nodes.clone(),
                 g.warp.clone(),
@@ -1052,12 +1313,12 @@ impl EngineController {
         let any_device_verified = all_nodes
             .iter()
             .any(|n| n.device_verified && n.fail_count < 3);
-        let any_foreign_verified = all_nodes
-            .iter()
-            .any(|n| n.device_verified && n.fail_count < 3 && n.source_tier <= 3 && n.exit_country != "CF");
+        let any_foreign_verified = all_nodes.iter().any(|n| {
+            n.device_verified
+                && n.fail_count < 3
+                && (n.source_tier == 0 || (n.source_tier <= 3 && !matches!(n.exit_country.as_str(), "CF" | "RU")))
+        });
 
-        // If user hasn't explicitly pinned a node and NO node has been verified on THIS device/ISP
-        // yet, signal VeloxVpnService to run parallel seed probe + live MASQUE-Chain refresh!
         if pinned_opt.is_none() && !any_device_verified {
             let has_untested_seeds = all_nodes
                 .iter()
@@ -1072,80 +1333,95 @@ impl EngineController {
         }
 
         let now = unix_now();
-        // If only Tier-4 CF WARP was cached and >90s passed, re-probe for real US/DE MASQUE-Chain first
         if pinned_opt.is_none() && !any_foreign_verified && now.saturating_sub(last_refresh) > 90 {
             return json!({
                 "ok": false,
                 "needsSeedProbe": false,
                 "needsRefresh": true,
-                "error": "Подбор зарубежных серверов US/DE через MASQUE…"
+                "error": "Подбор зарубежных серверов через MASQUE…"
             })
             .to_string();
         }
 
-        let live_only: Vec<VerifiedVpnNode> = if pinned_opt.is_some() {
-            all_nodes.into_iter().filter(|n| n.fail_count < 3).collect()
-        } else {
-            all_nodes
-                .into_iter()
-                .filter(|n| n.device_verified && n.fail_count < 3)
-                .collect()
-        };
+        let eff_wl = whitelist_mode || region == "WL";
+        let is_strict_country = region.len() == 2 && !matches!(region, "EU" | "WL" | "YT");
 
-        // Check «Белые списки РФ» requirement FIRST: when whitelist_mode is ON and user didn't pin
-        // a node, require real verified RF-whitelist (Минцифры SNI / VK-Yandex-CDN CIDR) servers!
-        let live_wl_count = live_only
+        let live_only: Vec<VerifiedVpnNode> = all_nodes
+            .into_iter()
+            .filter(|n| {
+                let is_pin = pinned_opt == Some(n.id.as_str());
+                let stale_op = !is_pin
+                    && n.protocol == "opera"
+                    && n.verified_unix > 0
+                    && now.saturating_sub(n.verified_unix) > 45 * 60;
+                !stale_op && n.fail_count < 3 && (is_pin || n.device_verified)
+            })
+            .collect();
+
+        // Count strictly matching healthy nodes for the chosen region/country
+        let strict_matches: Vec<VerifiedVpnNode> = live_only
             .iter()
-            .filter(|n| n.whitelist_friendly && n.fail_count < 2)
-            .count();
-        if pinned_opt.is_none()
-            && whitelist_mode
-            && live_wl_count == 0
-            && now.saturating_sub(last_refresh) > 20
-        {
-            return json!({
-                "ok": false,
-                "needsSeedProbe": false,
-                "needsRefresh": true,
-                "needsWhitelistRefresh": true,
-                "error": "Подбор рабочих серверов «Белые списки РФ» (SNI + CIDR)…"
-            })
-            .to_string();
+            .filter(|n| n.device_verified && node_matches_strict_region(n, region, eff_wl))
+            .cloned()
+            .collect();
+        let strict_match_cnt = strict_matches.len();
+
+        // STRICT COUNTRY GUARANTEE: When the user selected a specific country (e.g. Germany `DE`,
+        // USA `US`, Finland `FI`, Netherlands `NL`, etc.) or `WL`/`YT`, NEVER silently connect to
+        // a different country! Immediately ask `VeloxVpnService` to probe servers of THAT country!
+        if pinned_opt.is_none() && strict_match_cnt == 0 {
+            if eff_wl {
+                return json!({
+                    "ok": false,
+                    "needsSeedProbe": false,
+                    "needsRefresh": true,
+                    "needsWhitelistRefresh": true,
+                    "strictRegion": region,
+                    "error": "Подбор рабочих серверов «Белые списки РФ» (SNI + CIDR)…"
+                })
+                .to_string();
+            }
+            if is_strict_country || matches!(region, "YT" | "EU") {
+                return json!({
+                    "ok": false,
+                    "needsSeedProbe": false,
+                    "needsRefresh": true,
+                    "strictRegion": region,
+                    "error": format!("Подбор рабочих серверов {region}…")
+                })
+                .to_string();
+            }
         }
 
-        // Check if user switched to a specific region (US or DE) that currently has 0 matching live nodes
-        let has_region_match = match region {
-            "US" => live_only.iter().any(|n| n.exit_country == "US"),
-            "DE" => live_only
-                .iter()
-                .any(|n| region_match_rank(&n.exit_country, "DE") <= 1),
-            _ => any_foreign_verified,
-        };
-        let needs_region_refresh = pinned_opt.is_none()
-            && !whitelist_mode
-            && !has_region_match
-            && now.saturating_sub(last_refresh) > 45;
-
+        // Build ordered pool: strictly same-country for specific countries, best overall for AUTO
         let mut pool = if let Some(pid) = pinned_opt {
             let mut v: Vec<VerifiedVpnNode> =
                 live_only.iter().filter(|n| n.id == pid).cloned().collect();
-            for n in filter_nodes_for_region(&live_only, region, whitelist_mode) {
+            let rest = if is_strict_country || eff_wl || matches!(region, "YT" | "EU") {
+                filter_nodes_for_region(&strict_matches, region, eff_wl)
+            } else {
+                filter_nodes_for_region(&live_only, region, eff_wl)
+            };
+            for n in rest {
                 if n.id != pid {
                     v.push(n);
                 }
             }
             v
+        } else if is_strict_country || eff_wl || matches!(region, "YT" | "EU") {
+            filter_nodes_for_region(&strict_matches, region, eff_wl)
         } else {
-            filter_nodes_for_region(&live_only, region, whitelist_mode)
+            filter_nodes_for_region(&live_only, region, eff_wl)
         };
 
-        // Fallback to any live device-verified healthy node so user is never left stranded
-        if pool.is_empty() {
-            pool = live_only;
+        // Fallback to any live node ONLY in AUTO/WARP mode (NEVER on a specific selected country!)
+        if pool.is_empty() && !is_strict_country && !eff_wl {
+            pool = live_only.clone();
             pool.sort_by_key(|n| {
                 (
                     !n.device_verified,
                     n.fail_count,
+                    if n.source_tier == 0 { 0u8 } else { 1u8 },
                     if n.source_tier >= 4 { 1u8 } else { 0u8 },
                     region_match_rank(&n.exit_country, region),
                     n.rtt_ms,
@@ -1158,85 +1434,131 @@ impl EngineController {
                 "ok": false,
                 "needsSeedProbe": false,
                 "needsRefresh": true,
-                "error": "Живые узлы исчерпаны — запускаю обновление пула"
+                "strictRegion": region,
+                "error": format!("Серверы {region} исчерпаны — запускаю поиск новых…")
             })
             .to_string();
         }
 
-        match build_production_tun_config_ex(
+        // Append healthy `yt_ad_free` servers at tail for YouTube 0%-ad domain split ONLY
+        // (`build_production_tun_config_v16` strictly filters primary & standby by `region`!)
+        if adblock {
+            for yn in &live_only {
+                if yn.yt_ad_free && yn.device_verified && !pool.iter().any(|p| p.id == yn.id) {
+                    pool.push(yn.clone());
+                }
+            }
+        }
+
+        let auth_opt = if !socks_user.is_empty() && !socks_pass.is_empty() {
+            Some((socks_user, socks_pass))
+        } else {
+            None
+        };
+
+        match build_production_tun_config_v16(
             &pool,
             pinned_opt,
-            whitelist_mode,
+            region,
+            eff_wl,
             bypass_ru,
             fragment_tls,
+            adblock,
+            dual_channel,
+            idle_power_save,
             local_socks_port,
+            auth_opt,
             Some(&warp_snapshot),
         ) {
-            Ok((cfg_json, primary, backup_count)) => {
+            Ok(plan) => {
+                let primary = plan.primary;
+                let standby = plan.standby;
                 let age_sec = now.saturating_sub(primary.verified_unix);
-                // Any node verified on THIS device within the last 15 minutes connects in 0.1s
-                // without a redundant blocking startup probe (live watchdog monitors seamlessly)!
                 let freshly_verified =
                     primary.device_verified && age_sec <= 900 && primary.fail_count == 0;
+                // If Dual-Channel is ON but only 1 server exists in the chosen country (no `vpn_1` yet),
+                // ask `VeloxVpnService` to quietly replenish a 2nd server in background after connect!
+                let needs_standby_replenish =
+                    dual_channel && standby.is_none() && now.saturating_sub(last_refresh) > 45;
+                let sb_desc = match &standby {
+                    Some(sb) => format!(
+                        "{} [{} · {}мс]",
+                        sb.name, sb.exit_country, sb.rtt_ms
+                    ),
+                    None => "поиск резерва".to_string(),
+                };
                 diag_info(
                     "VPN",
                     format!(
-                        "Старт TUN -> {} [{}] {} chain={} wl={} sni={} frag={} exit={} rtt={}мс (свежесть:{}с, резерв:{})",
+                        "Старт TUN [{}] -> #1 {} [{}] ({}, {}мс) | #2 резерв 0мс: {} | yt={}",
+                        region,
                         primary.name,
                         primary.display_protocol,
-                        fmt_endpoint(&primary.host, primary.port),
-                        if primary.via_warp { "MASQUE" } else { "direct" },
-                        if primary.whitelist_friendly { "да" } else { "нет" },
-                        if primary.sni.is_empty() { "-" } else { &primary.sni },
-                        if primary.fragment_enabled { "on" } else { "off" },
                         primary.exit_country,
                         primary.rtt_ms,
-                        age_sec,
-                        backup_count
+                        if dual_channel { sb_desc.as_str() } else { "выкл" },
+                        plan.yt_mode_desc
                     ),
                 );
+                let sb_json = standby
+                    .as_ref()
+                    .map(compact_node_json)
+                    .unwrap_or(serde_json::Value::Null);
+                let pri_json = compact_node_json(&primary);
                 json!({
                     "ok": true,
-                    "configJson": cfg_json,
-                    "activeNode": primary,
-                    "primary": primary,
+                    "configJson": plan.config_json,
+                    "activeNode": pri_json,
+                    "primary": pri_json,
+                    "standbyNode": sb_json,
+                    "dualChannelActive": plan.dual_channel_active,
+                    "needsStandbyReplenish": needs_standby_replenish,
                     "firstTag": "vpn_0",
                     "viaWarp": primary.via_warp,
-                    "whitelistActive": whitelist_mode && primary.whitelist_friendly,
+                    "ytMode": plan.yt_mode_desc,
+                    "whitelistActive": eff_wl && primary.whitelist_friendly,
                     "freshlyVerified": freshly_verified,
                     "primaryVerified": primary.device_verified,
-                    "needsRegionRefresh": needs_region_refresh || (whitelist_mode && live_wl_count == 0),
-                    "backupCount": backup_count
+                    "needsRegionRefresh": false,
+                    "backupCount": plan.standby_pool_count
                 })
                 .to_string()
             }
             Err(e) => {
                 diag_err("VPN", format!("Ошибка сборки TUN-конфига: {e}"));
-                json!({ "ok": false, "error": e }).to_string()
+                json!({
+                    "ok": false,
+                    "needsRefresh": true,
+                    "strictRegion": region,
+                    "error": e
+                })
+                .to_string()
             }
         }
     }
 
-    /// Mark a node as failed/degraded with full diagnostic context and return remaining live count.
+    /// Mark a node as failed/degraded with full diagnostic context and return remaining live count
+    /// strictly scoped to `target_region` (so selecting Germany counts ONLY live Germany standbys!).
     pub fn report_node_failure(
         &self,
         node_id: &str,
         target_region: &str,
         reason: &str,
     ) -> String {
+        let region = normalize_region(target_region);
+        let eff_wl = region == "WL";
         let now = unix_now();
         let (node_desc, remaining_live) = {
-            let mut g = self.data.write().unwrap();
+            let mut g = write_data(&self.data);
             let mut bad_ep = None;
             let mut desc = node_id.to_string();
             let instant_evict = reason.contains("startupProbe") || reason.contains("ручная смена");
             for n in &mut g.vpn_nodes {
                 if n.id == node_id {
-                    // Never waste the user's time retrying a node whose TUN startupProbe just died!
                     n.fail_count = if instant_evict {
                         3
                     } else {
-                        n.fail_count.saturating_add(1)
+                        n.fail_count.saturating_add(1).min(3)
                     };
                     desc = format!(
                         "{} [{}] {} sni={} (сбой #{})",
@@ -1259,13 +1581,17 @@ impl EngineController {
             if let Some(ep) = bad_ep {
                 g.blacklist.insert(ep, now);
             }
-            g.vpn_nodes.retain(|n| n.fail_count < 3);
+            // Keep Tier-0 paid subscription nodes visible in server list (skipped at fail_count=3 until re-synced)
+            g.vpn_nodes.retain(|n| n.source_tier == 0 || n.fail_count < 3);
             let rem = g
                 .vpn_nodes
                 .iter()
-                .filter(|n| n.device_verified && n.fail_count == 0)
+                .filter(|n| {
+                    n.device_verified
+                        && n.fail_count < 2
+                        && node_matches_strict_region(n, region, eff_wl)
+                })
                 .count();
-            let _ = target_region;
             (desc, rem)
         };
         self.save();
@@ -1277,18 +1603,19 @@ impl EngineController {
         };
         diag_warn(
             "VPN",
-            format!("Сбой узла: {node_desc}{reason_suffix} · живых в резерве: {remaining_live}"),
+            format!("Сбой узла: {node_desc}{reason_suffix} · резерв [{region}]: {remaining_live}"),
         );
 
         json!({
             "ok": true,
             "healthyRemaining": remaining_live,
+            "needsStandbyReplenish": remaining_live < 2,
             "needsRefresh": remaining_live == 0
         })
         .to_string()
     }
 
-    /// Live tunnel check for background Watchdog.
+    /// Live tunnel check for background Watchdog (runs on ultra-slim 1-thread `:vpn` runtime).
     pub fn check_tunnel_health(&self, local_socks_port: u16) -> String {
         let res: TunnelHealthResult =
             TOKIO_RT.block_on(check_active_tunnel_health(local_socks_port));
@@ -1301,13 +1628,23 @@ impl EngineController {
         serde_json::to_string(&res).unwrap_or_else(|_| "{\"alive\":false}".into())
     }
 
+    /// Consolidated single-pass post-TUN HTML + DoH + GeoIP verifier (authed `127.0.0.1:10808`).
+    pub fn verify_tunnel_web(&self, local_socks_port: u16, is_opera: bool) -> String {
+        TOKIO_RT
+            .block_on(crate::vpn_probe::verify_tunnel_web_and_geo(
+                local_socks_port,
+                is_opera,
+            ))
+            .to_string()
+    }
+
     /// Fetch & strictly verify Telegram proxies against real Telegram DC2 (`req_pq_multi -> resPQ`)
     /// requiring response time `<= max_rtt_ms` (default 1400 ms).
     pub fn refresh_tg_proxies(&self, max_rtt_ms: u32, active_socks_port: u16) -> String {
         let limit_ms = max_rtt_ms.clamp(300, 1400);
         let proxy = socks_opt(active_socks_port);
         let (sources, custom_tg, existing_tg) = {
-            let g = self.data.read().unwrap();
+            let g = read_data(&self.data);
             (
                 g.sources.clone(),
                 g.custom_tg_links.clone(),
@@ -1353,7 +1690,7 @@ impl EngineController {
         }
 
         let final_list = {
-            let mut g = self.data.write().unwrap();
+            let mut g = write_data(&self.data);
             if !verified.is_empty() {
                 g.tg_proxies = verified.clone();
                 g.last_tg_refresh_unix = unix_now();
@@ -1405,7 +1742,7 @@ impl EngineController {
 
     pub fn start_local_tg_bridge(&self, port: u16, max_rtt_ms: u32) -> String {
         let limit_ms = max_rtt_ms.clamp(300, 1400);
-        let proxies = { self.data.read().unwrap().tg_proxies.clone() };
+        let proxies = { read_data(&self.data).tg_proxies.clone() };
         let socks_cnt = proxies.iter().filter(|p| p.kind == "socks5").count();
         self.tg_bridge.update_pool(&proxies);
         let bridge = self.tg_bridge.clone();
@@ -1493,39 +1830,88 @@ impl EngineController {
     ///   `streisand://...`, `sing-box://import-remote-profile?url=...`, `clash://install-config?url=...`
     /// - Single OR multi-line VPN keys: `vless://`, `vmess://`, `hy2://`, `hysteria2://`, `trojan://`, `ss://`
     /// - Telegram proxy links: `tg://proxy`, `https://t.me/proxy`, `tg://socks`, `socks5://`
+    /// Universal v1.6.0 import engine — supports EVERYTHING Happ, Incy, v2RayTun, Hiddify,
+    /// v2rayNG, sing-box, Clash & Streisand support:
+    /// - Offline RSA/AES decryption of `happ://crypt/...`, `crypt2`, `crypt3`, `crypt4`, `crypt5`!
+    /// - HTTPS-wrapped crypto redirects (`https://go.example.com/happ://crypt5/...`) & `incy://crypt1/...`!
+    /// - Happ AES-128-GCM body-encrypted responses (`Encrypt-Tag`), Xray JSON & JSON Array payloads!
+    /// - Multi-client deep-links (`happ://add/`, `v2raytun://`, `hiddify://`, `v2rayng://`, `sing-box://`, `clash://`, `streisand://`, `ssconf://`)!
+    /// - Single/multi-line VPN keys (`vless://` incl. PQ `mlkem768x25519plus` & `pcs`/`pqv`/`extra`, `vmess://`, `hy2://`, `trojan://`, `ss://`, `wireguard://`, `.conf`, `socks5://`, `https://user:pass@`)!
+    /// - Raw Xray JSON outbound configs (`{"outbounds":[...]}`)!
+    /// - Telegram proxies (`tg://proxy`, `https://t.me/proxy`, `tg://socks`, `socks5://`)!
     pub fn add_custom_item(&self, raw_input: &str, kind_hint: &str, max_tg_rtt_ms: u32) -> String {
         let input = raw_input.trim();
         if input.is_empty() {
             return json!({ "ok": false, "error": "Пустая строка" }).to_string();
         }
 
-        // Reject hardware-locked encrypted Happ blobs with a clear actionable explanation
-        if input.starts_with("happ://crypt") {
-            return json!({
-                "ok": false,
-                "error": "Ссылка happ://crypt зашифрована под один клиент — вставьте обычную https:// ссылку подписки"
-            })
-            .to_string();
-        }
-
-        // 1. Subscription URL or client deep-link (`https://...`, `happ://add/...`, `v2raytun://...`)
+        // 1. Single-line subscription URL, `happ://crypt..crypt5`, `incy://crypt1`, or client deep-link
         let single_line = input.lines().filter(|l| !l.trim().is_empty()).count() == 1;
         if single_line {
-            if let Some(sub_url) = unwrap_subscription_url(input) {
-                if kind_hint == "manifest" && sub_url.starts_with("https://") {
+            // Check single-node deep-links first (e.g. `happ://import/vless://...`, `v2raytun://import/vless://...`)
+            for inline_pfx in ["happ://import/", "v2raytun://import/", "velox://import/"] {
+                if let Some(rest) = input.strip_prefix(inline_pfx) {
+                    let dec = percent_encoding::percent_decode_str(rest)
+                        .decode_utf8_lossy()
+                        .trim()
+                        .to_string();
+                    if dec.starts_with("vless://")
+                        || dec.starts_with("vmess://")
+                        || dec.starts_with("trojan://")
+                        || dec.starts_with("ss://")
+                        || dec.starts_with("hy2://")
+                        || dec.starts_with("hysteria2://")
+                        || dec.starts_with("wireguard://")
                     {
-                        let mut g = self.data.write().unwrap();
-                        g.manifest_url = sub_url;
+                        return self.add_custom_item(&dec, kind_hint, max_tg_rtt_ms);
                     }
-                    self.save();
+                }
+            }
+
+            match unwrap_or_decrypt_subscription(input) {
+                Some(Ok(unw)) => {
+                    if kind_hint == "manifest" && unw.fetch_url.starts_with("https://") {
+                        {
+                            let mut g = write_data(&self.data);
+                            g.manifest_url = unw.fetch_url;
+                        }
+                        self.save();
+                        return json!({
+                            "ok": true,
+                            "type": "manifest",
+                            "message": "Манифест сохранён"
+                        })
+                        .to_string();
+                    }
+                    if !unw.encrypted_kind.is_empty() {
+                        diag_ok(
+                            "HAPP",
+                            format!(
+                                "Расшифрована ссылка happ://{} офлайн (без передачи на сторонние серверы)",
+                                unw.encrypted_kind
+                            ),
+                        );
+                    }
+                    return self.fetch_and_upsert_subscription_ex(
+                        &unw.full_url,
+                        &unw.fetch_url,
+                        &unw.hint_title,
+                        &unw.encrypted_kind,
+                        unw.prefer_happ_ua,
+                        kind_hint,
+                        max_tg_rtt_ms,
+                        crate::net_util::active_local_socks_port(),
+                    );
+                }
+                Some(Err(err_msg)) => {
+                    diag_warn("HAPP", format!("Ошибка расшифровки ссылки: {err_msg}"));
                     return json!({
-                        "ok": true,
-                        "type": "manifest",
-                        "message": "Манифест сохранён"
+                        "ok": false,
+                        "error": err_msg
                     })
                     .to_string();
                 }
-                return self.fetch_and_upsert_subscription(&sub_url, kind_hint, max_tg_rtt_ms, 0);
+                None => {}
             }
         }
 
@@ -1545,7 +1931,7 @@ impl EngineController {
                 Ok(verified) => {
                     let rtt = verified.rtt_ms;
                     {
-                        let mut g = self.data.write().unwrap();
+                        let mut g = write_data(&self.data);
                         if !g.custom_tg_links.contains(&cand.tg_link) {
                             g.custom_tg_links.push(cand.tg_link.clone());
                         }
@@ -1586,7 +1972,7 @@ impl EngineController {
             let mut added = 0usize;
             let mut first_name = String::new();
             {
-                let mut g = self.data.write().unwrap();
+                let mut g = write_data(&self.data);
                 for uri in parsed_uris.iter().rev() {
                     if first_name.is_empty() {
                         if let Some(c) = parse_share_uri_to_candidate(uri, "AUTO", 0, false) {
@@ -1618,130 +2004,19 @@ impl EngineController {
             .to_string();
         }
 
-        json!({
-            "ok": false,
-            "error": "Поддерживаются https:// подписки, happ://, v2raytun://, vless://, vmess://, hy2://, trojan://, ss://, tg://proxy и socks5://"
-        })
-        .to_string()
-    }
-
-    /// Download, decode, validate, and incrementally merge a user subscription URL.
-    /// Uses `v2rayNG/1.9.30` / `Happ` / `SFA` User-Agents + redirect & portal unwrapping
-    /// so Remnawave/Marzban/3x-ui/Happ panels return real server URIs & profile metadata.
-    pub fn fetch_and_upsert_subscription(
-        &self,
-        sub_url: &str,
-        kind_hint: &str,
-        max_tg_rtt_ms: u32,
-        active_socks_port: u16,
-    ) -> String {
-        let host_label = url::Url::parse(sub_url)
-            .ok()
-            .and_then(|u| u.host_str().map(|s| s.to_string()))
-            .unwrap_or_else(|| "Подписка".into());
-        let proxy = socks_opt(active_socks_port);
-
-        diag_info("SRC", format!("Загрузка подписки: {sub_url}"));
-        let fetched = match TOKIO_RT.block_on(fetch_subscription_smart(sub_url, proxy, 1024 * 1024))
-        {
-            Ok(f) => f,
-            Err(e) => {
-                diag_err("SRC", format!("Ошибка загрузки подписки {host_label}: {e}"));
-                return json!({
-                    "ok": false,
-                    "error": format!("Не удалось скачать подписку ({host_label}): {e}")
-                })
-                .to_string();
-            }
-        };
-
-        let vpn_uris = extract_vpn_uris_from_subscription(&fetched.body, 120);
-        let title = if !fetched.profile_title.is_empty() {
-            fetched.profile_title.clone()
-        } else {
-            format!("Подписка · {host_label}")
-        };
-        let new_hash = content_hash_short(&fetched.body);
-        let now = unix_now();
-
-        // Case A: Subscription contains valid VPN servers (VLESS Reality/XHTTP, Hy2, Trojan, SS, VMess)!
-        if !vpn_uris.is_empty() && kind_hint != "tg" {
-            let count = vpn_uris.len();
-            let added_cnt: usize;
-            let removed_cnt: usize;
-            let mut unchanged = false;
-
-            // Create immediate visible entries for new custom servers + prune deleted old ones!
-            {
-                let mut g = self.data.write().unwrap();
-                let prev_uris: HashSet<String> = g
-                    .sources
-                    .iter()
-                    .find(|s| s.url == sub_url)
-                    .map(|s| s.cached_uris.iter().cloned().collect())
-                    .unwrap_or_default();
-                let next_set: HashSet<String> = vpn_uris.iter().cloned().collect();
-
-                // Incremental delta diff: remove nodes deleted from subscription, keep working unchanged ones!
-                let removed_uris: HashSet<String> =
-                    prev_uris.difference(&next_set).cloned().collect();
-                removed_cnt = removed_uris.len();
-                added_cnt = next_set.difference(&prev_uris).count();
-                if !removed_uris.is_empty() {
-                    g.vpn_nodes
-                        .retain(|n| !(n.source_tier == 0 && removed_uris.contains(&n.raw_uri)));
-                }
-                let has_present_nodes = g
-                    .vpn_nodes
-                    .iter()
-                    .any(|n| n.source_tier == 0 && next_set.contains(&n.raw_uri));
-
-                if let Some(existing) = g.sources.iter_mut().find(|s| s.url == sub_url) {
-                    unchanged = existing.content_hash == new_hash
-                        && !existing.cached_uris.is_empty()
-                        && has_present_nodes;
-                    existing.name = title.clone();
-                    existing.kind = "vpn".into();
-                    existing.enabled = true;
-                    existing.builtin = false;
-                    existing.userinfo = fetched.userinfo.clone();
-                    existing.cached_count = count as u32;
-                    existing.last_sync_unix = now;
-                    existing.content_hash = new_hash;
-                    existing.cached_uris = vpn_uris.clone();
-                } else {
-                    g.sources.insert(
-                        0,
-                        SubSource {
-                            name: title.clone(),
-                            url: sub_url.to_string(),
-                            kind: "vpn".into(),
-                            region_hint: "AUTO".into(),
-                            enabled: true,
-                            builtin: false,
-                            userinfo: fetched.userinfo.clone(),
-                            cached_count: count as u32,
-                            last_sync_unix: now,
-                            content_hash: new_hash,
-                            cached_uris: vpn_uris.clone(),
-                        },
-                    );
-                }
-
-                // Immediately register any un-probed subscription nodes into vpn_nodes so the user
-                // sees EVERY server from their subscription right away even before probe finishes!
-                let existing_raws: HashSet<String> =
-                    g.vpn_nodes.iter().map(|n| n.raw_uri.clone()).collect();
-                let mut staged = Vec::new();
-                for uri in &vpn_uris {
-                    if existing_raws.contains(uri) {
-                        continue;
-                    }
-                    let is_real = uri.contains("security=reality");
-                    if let Some(c) = parse_share_uri_to_candidate(uri, "AUTO", 0, !is_real) {
+        // 4. Raw Xray-core JSON config (`{"outbounds":[...]}` or array of Xray configs)
+        if input.starts_with('{') || input.starts_with('[') {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(input) {
+                let items: Vec<&serde_json::Value> = match &val {
+                    serde_json::Value::Array(arr) => arr.iter().collect(),
+                    obj => vec![obj],
+                };
+                let mut staged_nodes = Vec::new();
+                for item in items {
+                    for c in parse_xray_json_config_to_candidates(item, "Xray JSON", "AUTO", 0) {
                         let proto_lbl = crate::xray_config::human_protocol_label(&c);
                         let guess_cc = detect_country_from_name(&c.name, &c.region_hint);
-                        staged.push(VerifiedVpnNode {
+                        staged_nodes.push(VerifiedVpnNode {
                             id: c.id,
                             name: c.name,
                             display_protocol: proto_lbl,
@@ -1749,7 +2024,7 @@ impl EngineController {
                             host: c.host,
                             port: c.port,
                             sni: c.sni,
-                            exit_country: guess_cc,
+                            exit_country: guess_cc.clone(),
                             exit_colo: String::new(),
                             exit_ip: String::new(),
                             rtt_ms: 0,
@@ -1759,6 +2034,8 @@ impl EngineController {
                             fragment_enabled: c.fragment_enabled,
                             via_warp: false,
                             device_verified: false,
+                            yt_ad_free: matches!(guess_cc.as_str(), "AL" | "MD" | "MC" | "AD"),
+                            yt_country: String::new(),
                             source_tier: 0,
                             raw_uri: c.raw_uri,
                             outbound_json: c.outbound_json,
@@ -1767,9 +2044,306 @@ impl EngineController {
                         });
                     }
                 }
+                if !staged_nodes.is_empty() {
+                    let total = staged_nodes.len();
+                    let first_name = staged_nodes[0].name.clone();
+                    {
+                        let mut g = write_data(&self.data);
+                        let ids: HashSet<String> = staged_nodes.iter().map(|n| n.id.clone()).collect();
+                        g.vpn_nodes.retain(|n| !ids.contains(&n.id));
+                        staged_nodes.append(&mut g.vpn_nodes);
+                        staged_nodes.truncate(128);
+                        g.vpn_nodes = staged_nodes;
+                    }
+                    self.save();
+                    diag_ok("VPN", format!("Импортирован Xray JSON: {total} серверов"));
+                    return json!({
+                        "ok": true,
+                        "type": "vpn_key",
+                        "needsCustomProbe": true,
+                        "importedCount": total,
+                        "message": if total == 1 {
+                            format!("Xray JSON «{first_name}» добавлен — проверяю соединение…")
+                        } else {
+                            format!("Импортировано {total} серверов из Xray JSON — проверяю…")
+                        }
+                    })
+                    .to_string();
+                }
+            }
+        }
+
+        json!({
+            "ok": false,
+            "error": "Поддерживаются https:// подписки, happ://crypt1–5, happ://add, incy://crypt1, v2raytun://, hiddify://, vless://, vmess://, hy2://, trojan://, ss://, wireguard:// (.conf), Xray JSON и tg://proxy"
+        })
+        .to_string()
+    }
+
+    pub fn fetch_and_upsert_subscription(
+        &self,
+        sub_url: &str,
+        kind_hint: &str,
+        max_tg_rtt_ms: u32,
+        active_socks_port: u16,
+    ) -> String {
+        let fetch_url = fetch_url_without_fragment(sub_url);
+        let (enc_kind, body_enc, pref_happ) = {
+            let g = read_data(&self.data);
+            g.sources
+                .iter()
+                .find(|s| s.url == sub_url)
+                .map(|s| (s.encrypted_kind.clone(), s.body_encrypted, s.prefer_happ_ua))
+                .unwrap_or_default()
+        };
+        self.fetch_and_upsert_subscription_ex(
+            sub_url,
+            &fetch_url,
+            "",
+            &enc_kind,
+            pref_happ || body_enc,
+            kind_hint,
+            max_tg_rtt_ms,
+            active_socks_port,
+        )
+    }
+
+    /// Full Happ 4.11+ / Remnawave / Marzban / 3x-ui / Shuka subscription importer:
+    /// - Offline `happ://crypt..crypt5` + AES-128-GCM body decryption + Xray JSON + share URIs
+    /// - Opt-in `X-HWID` device binding + clear limit diagnostics
+    /// - Rich metadata (`upload/download/total_bytes`, `expire_unix`, `announce`, `support_url`, `web_page_url`, `update_interval_hours`)
+    /// - Retains cached working servers on temporary 4xx/5xx/network errors (zero disruption!)
+    #[allow(clippy::too_many_arguments)]
+    pub fn fetch_and_upsert_subscription_ex(
+        &self,
+        sub_url: &str,
+        fetch_url: &str,
+        name_hint: &str,
+        encrypted_kind: &str,
+        prefer_happ_ua: bool,
+        kind_hint: &str,
+        max_tg_rtt_ms: u32,
+        active_socks_port: u16,
+    ) -> String {
+        let host_label = url::Url::parse(fetch_url)
+            .ok()
+            .and_then(|u| u.host_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| "Подписка".into());
+        let proxy = socks_opt(active_socks_port);
+        let (hwid_cfg, prev_body_enc, prev_cached_cnt) = {
+            let g = read_data(&self.data);
+            let ex = g.sources.iter().find(|s| s.url == sub_url);
+            (
+                g.hwid_config.clone(),
+                ex.is_some_and(|s| s.body_encrypted),
+                ex.map(|s| s.cached_count).unwrap_or(0),
+            )
+        };
+
+        diag_info("SRC", format!("Загрузка подписки: {host_label}"));
+        let fetched = match TOKIO_RT.block_on(fetch_subscription_smart_ex(
+            sub_url,
+            fetch_url,
+            encrypted_kind,
+            prev_body_enc,
+            prefer_happ_ua,
+            &hwid_cfg,
+            proxy,
+            1536 * 1024,
+        )) {
+            Ok(f) => f,
+            Err(e) => {
+                // Retain previously cached servers intact on 4xx/5xx/network error!
+                let retain_note = if prev_cached_cnt > 0 {
+                    format!(" (сохранено {prev_cached_cnt} ранее загруженных серверов)")
+                } else {
+                    String::new()
+                };
+                diag_err("SRC", format!("Ошибка загрузки подписки {host_label}: {e}{retain_note}"));
+                return json!({
+                    "ok": false,
+                    "retainedCount": prev_cached_cnt,
+                    "error": format!("Не удалось обновить подписку ({host_label}): {e}{retain_note}")
+                })
+                .to_string();
+            }
+        };
+
+        let env = &fetched.envelope;
+        let vpn_uris = extract_vpn_uris_from_subscription(&fetched.body, 140);
+        let mut json_cands: Vec<VpnCandidate> = Vec::new();
+        for jcfg in env.xray_json_configs.iter().take(64) {
+            json_cands.extend(parse_xray_json_config_to_candidates(
+                jcfg,
+                &host_label,
+                "AUTO",
+                0,
+            ));
+        }
+        let cached_json_obs: Vec<serde_json::Value> = json_cands
+            .iter()
+            .take(64)
+            .map(|c| {
+                let mut m = c.outbound_json.clone();
+                if let Some(o) = m.as_object_mut() {
+                    o.insert("remarks".into(), json!(c.name));
+                }
+                m
+            })
+            .collect();
+
+        let title = if !fetched.profile_title.is_empty() {
+            fetched.profile_title.clone()
+        } else if !name_hint.trim().is_empty() {
+            name_hint.trim().chars().take(48).collect()
+        } else if !encrypted_kind.is_empty() {
+            format!("Happ · {host_label}")
+        } else {
+            format!("Подписка · {host_label}")
+        };
+        let new_hash = content_hash_short(&format!("{}:{}", fetched.body, cached_json_obs.len()));
+        let now = unix_now();
+
+        // Case A: Subscription contains valid VPN servers (share URIs and/or Xray JSON outbounds)!
+        if (!vpn_uris.is_empty() || !json_cands.is_empty()) && kind_hint != "tg" {
+            let count = vpn_uris.len() + json_cands.len();
+            let added_cnt: usize;
+            let removed_cnt: usize;
+            let mut unchanged = false;
+
+            {
+                let mut g = write_data(&self.data);
+                let prev_uris: HashSet<String> = g
+                    .sources
+                    .iter()
+                    .find(|s| s.url == sub_url)
+                    .map(|s| s.cached_uris.iter().cloned().collect())
+                    .unwrap_or_default();
+                let mut all_next_raws: HashSet<String> = vpn_uris.iter().cloned().collect();
+                for jc in &json_cands {
+                    all_next_raws.insert(jc.raw_uri.clone());
+                }
+
+                let removed_uris: HashSet<String> =
+                    prev_uris.difference(&all_next_raws).cloned().collect();
+                removed_cnt = removed_uris.len();
+                added_cnt = all_next_raws.difference(&prev_uris).count();
+                if !removed_uris.is_empty() {
+                    g.vpn_nodes
+                        .retain(|n| !(n.source_tier == 0 && removed_uris.contains(&n.raw_uri)));
+                }
+                // Reset fail_count on re-synced custom nodes so temporarily flaky paid nodes recover cleanly
+                for n in &mut g.vpn_nodes {
+                    if n.source_tier == 0 && all_next_raws.contains(&n.raw_uri) {
+                        n.fail_count = 0;
+                    }
+                }
+                let has_present_nodes = g
+                    .vpn_nodes
+                    .iter()
+                    .any(|n| n.source_tier == 0 && all_next_raws.contains(&n.raw_uri));
+
+                let hwid_badge = match env.hwid_status.as_str() {
+                    "limit_reached" => "лимит исчерпан".to_string(),
+                    "hwid_required" => "требуется HWID".to_string(),
+                    other => other.to_string(),
+                };
+                let effective_url = if encrypted_kind.is_empty()
+                    && fetched.migrated_url.starts_with("https://")
+                    && fetched.migrated_url != sub_url
+                {
+                    diag_info("SRC", "Панель обновила адрес подписки (заголовок new-url)");
+                    fetched.migrated_url.clone()
+                } else {
+                    sub_url.to_string()
+                };
+                let meta_src = SubSource {
+                    name: title.clone(),
+                    url: effective_url,
+                    kind: "vpn".into(),
+                    region_hint: "AUTO".into(),
+                    enabled: true,
+                    builtin: false,
+                    userinfo: fetched.userinfo.clone(),
+                    upload_bytes: env.upload_bytes,
+                    download_bytes: env.download_bytes,
+                    total_bytes: env.total_bytes,
+                    expire_unix: env.expire_unix,
+                    update_interval_hours: env.update_interval_hours,
+                    announce: env.announce.clone(),
+                    support_url: env.support_url.clone(),
+                    web_page_url: env.web_page_url.clone(),
+                    hwid_status: hwid_badge,
+                    encrypted_kind: encrypted_kind.to_string(),
+                    body_encrypted: env.body_encrypted,
+                    prefer_happ_ua: prefer_happ_ua
+                        || env.body_encrypted
+                        || !encrypted_kind.is_empty()
+                        || fetched.via_tag.starts_with("Happ"),
+                    cached_count: count as u32,
+                    last_sync_unix: now,
+                    content_hash: new_hash.clone(),
+                    cached_uris: vpn_uris.clone(),
+                    cached_json_outbounds: cached_json_obs,
+                };
+
+                if let Some(existing) = g.sources.iter_mut().find(|s| s.url == sub_url) {
+                    unchanged = existing.content_hash == new_hash
+                        && existing.cached_count > 0
+                        && has_present_nodes;
+                    *existing = meta_src;
+                } else {
+                    g.sources.insert(0, meta_src);
+                }
+
+                let existing_raws: HashSet<String> =
+                    g.vpn_nodes.iter().map(|n| n.raw_uri.clone()).collect();
+                let mut staged = Vec::new();
+                let uri_cands = vpn_uris.iter().filter_map(|uri| {
+                    if existing_raws.contains(uri) {
+                        return None;
+                    }
+                    let is_real = uri.contains("security=reality");
+                    parse_share_uri_to_candidate(uri, "AUTO", 0, !is_real)
+                });
+                let extra_json_cands = json_cands
+                    .iter()
+                    .filter(|c| !existing_raws.contains(&c.raw_uri))
+                    .cloned();
+                for c in uri_cands.chain(extra_json_cands) {
+                    let proto_lbl = crate::xray_config::human_protocol_label(&c);
+                    let guess_cc = detect_country_from_name(&c.name, &c.region_hint);
+                    let guess_yt_free = matches!(guess_cc.as_str(), "AL" | "MD" | "MC" | "AD");
+                    staged.push(VerifiedVpnNode {
+                        id: c.id,
+                        name: c.name,
+                        display_protocol: proto_lbl,
+                        protocol: c.protocol,
+                        host: c.host,
+                        port: c.port,
+                        sni: c.sni,
+                        exit_country: guess_cc,
+                        exit_colo: String::new(),
+                        exit_ip: String::new(),
+                        rtt_ms: 0,
+                        kbps: 0,
+                        passed_32kb: false,
+                        whitelist_friendly: c.whitelist_friendly,
+                        fragment_enabled: c.fragment_enabled,
+                        via_warp: false,
+                        device_verified: false,
+                        yt_ad_free: guess_yt_free,
+                        yt_country: String::new(),
+                        source_tier: 0,
+                        raw_uri: c.raw_uri,
+                        outbound_json: c.outbound_json,
+                        verified_unix: 0,
+                        fail_count: 0,
+                    });
+                }
                 if !staged.is_empty() {
                     staged.append(&mut g.vpn_nodes);
-                    staged.truncate(64);
+                    staged.truncate(140);
                     g.vpn_nodes = staged;
                 }
             }
@@ -1779,29 +2353,44 @@ impl EngineController {
                 .iter()
                 .filter_map(|u| parse_share_uri_to_candidate(u, "AUTO", 0, false))
                 .filter(|c| c.whitelist_friendly)
-                .count();
+                .count()
+                + json_cands.iter().filter(|c| c.whitelist_friendly).count();
             let info_sfx = if fetched.userinfo.is_empty() {
                 String::new()
             } else {
                 format!(" ({})", fetched.userinfo)
             };
+            let crypt_badge = if !encrypted_kind.is_empty() && env.body_encrypted {
+                format!(" [happ://{encrypted_kind}+AES]")
+            } else if !encrypted_kind.is_empty() {
+                format!(" [happ://{encrypted_kind}]")
+            } else if env.body_encrypted {
+                " [Happ AES]".to_string()
+            } else {
+                String::new()
+            };
             diag_ok(
                 "SRC",
                 format!(
-                    "Подписка «{title}» [{via}]: {count} серверов (БС-РФ:{wl_cnt}, +{added_cnt}/-{removed_cnt}){info_sfx}",
+                    "Подписка «{title}»{crypt_badge} [{via}]: {count} серверов (БС-РФ:{wl_cnt}, +{added_cnt}/-{removed_cnt}){info_sfx}",
                     via = fetched.via_tag
                 ),
             );
             let msg = if unchanged {
-                format!("«{title}»: актуальна ({count} серверов, без изменений)")
+                format!("«{title}»{crypt_badge}: актуальна ({count} серверов)")
             } else {
-                format!("«{title}»: загружено {count} серверов{info_sfx} — проверяю рабочие…")
+                format!("«{title}»{crypt_badge}: загружено {count} серверов{info_sfx} — проверяю…")
             };
             return json!({
                 "ok": true,
                 "type": "subscription",
                 "subName": title,
                 "userinfo": fetched.userinfo,
+                "encryptedKind": encrypted_kind,
+                "bodyEncrypted": env.body_encrypted,
+                "announce": env.announce,
+                "supportUrl": env.support_url,
+                "webPageUrl": env.web_page_url,
                 "importedCount": count,
                 "whitelistCount": wl_cnt,
                 "addedCount": added_cnt,
@@ -1813,12 +2402,12 @@ impl EngineController {
             .to_string();
         }
 
-        // Case B: Subscription contains Telegram proxy links (`tg://proxy`, `t.me/proxy`, `socks5`)
+        // Case B: Telegram proxy subscription
         let tg_cands = parse_tg_proxies_from_text(&fetched.body, kind_hint == "tg_socks");
         if !tg_cands.is_empty() {
             let total_tg = tg_cands.len();
             {
-                let mut g = self.data.write().unwrap();
+                let mut g = write_data(&self.data);
                 if let Some(ex) = g.sources.iter_mut().find(|s| s.url == sub_url) {
                     ex.name = title.clone();
                     ex.kind = "tg".into();
@@ -1840,7 +2429,7 @@ impl EngineController {
                             cached_count: total_tg as u32,
                             last_sync_unix: now,
                             content_hash: new_hash,
-                            cached_uris: Vec::new(),
+                            ..Default::default()
                         },
                     );
                 }
@@ -1861,34 +2450,41 @@ impl EngineController {
             .to_string();
         }
 
+        let hint = if env.sing_box_only && vpn_uris.is_empty() && json_cands.is_empty() {
+            "Подписка вернула конфиг только для sing-box — отключите фильтр клиента в панели или включите формат Xray/Happ"
+        } else {
+            "возможно, подписка истекла или заблокирована"
+        };
         diag_warn(
             "SRC",
             format!(
-                "В подписке {host_label} не найдено поддерживаемых ключей (размер {} Б, via {})",
-                fetched.body.len(),
+                "В подписке {host_label} не найдено ключей ({} Б, via {}, {hint})",
+                fetched.raw_bytes.len(),
                 fetched.via_tag
             ),
         );
         json!({
             "ok": false,
-            "error": format!("По ссылке {host_label} не найдено активных ключей VPN или прокси (возможно, подписка истекла)")
+            "error": format!("По ссылке {host_label} не найдено активных серверов ({hint})")
         })
         .to_string()
     }
 
-    /// Build a fast dedicated Xray probe batch for all user custom subscriptions & custom keys
-    /// so imported subscriptions verify in ~4–5 seconds.
+    /// Build a fast dedicated Xray probe batch for all user custom subscriptions (URIs + Xray JSON) & keys!
     pub fn prepare_custom_sub_probe(&self, base_port: u16, fragment_tls: bool) -> String {
-        let (uris, warp_acc) = {
-            let g = self.data.read().unwrap();
+        let (uris, json_obs, staged_json_nodes, warp_acc) = {
+            let g = read_data(&self.data);
             let mut list: Vec<String> = Vec::new();
+            let mut jobs: Vec<serde_json::Value> = Vec::new();
             let mut seen = HashSet::new();
             for s in g.sources.iter().filter(|s| !s.builtin && s.enabled && s.kind == "vpn") {
-                // If an older custom subscription had 0 cached_uris (migrated from v1.2!), save URL for fetch
                 for u in &s.cached_uris {
                     if seen.insert(u.clone()) {
                         list.push(u.clone());
                     }
+                }
+                for j in &s.cached_json_outbounds {
+                    jobs.push(j.clone());
                 }
             }
             for u in &g.custom_vpn_uris {
@@ -1896,22 +2492,49 @@ impl EngineController {
                     list.push(u.clone());
                 }
             }
-            (list, g.warp.clone())
+            let standalone_json: Vec<VerifiedVpnNode> = g
+                .vpn_nodes
+                .iter()
+                .filter(|n| n.source_tier == 0 && n.raw_uri.starts_with("xray-json://"))
+                .cloned()
+                .collect();
+            (list, jobs, standalone_json, g.warp.clone())
         };
 
-        if uris.is_empty() {
-            return json!({ "ok": false, "empty": true }).to_string();
-        }
-
-        let raw_cands: Vec<VpnCandidate> = uris
+        let mut raw_cands: Vec<VpnCandidate> = uris
             .into_iter()
             .filter(|u| !is_dummy_banner_uri(u))
             .filter_map(|u| {
                 let is_real = u.contains("security=reality");
                 parse_share_uri_to_candidate(&u, "AUTO", 0, fragment_tls && !is_real)
             })
-            .take(36)
             .collect();
+        for job in &json_obs {
+            raw_cands.extend(parse_xray_json_config_to_candidates(job, "Happ JSON", "AUTO", 0));
+        }
+        for sn in staged_json_nodes {
+            if !raw_cands.iter().any(|c| c.id == sn.id) {
+                raw_cands.push(VpnCandidate {
+                    id: sn.id,
+                    raw_uri: sn.raw_uri,
+                    name: sn.name,
+                    protocol: sn.protocol,
+                    transport: "tcp".into(),
+                    security: "tls".into(),
+                    sni: sn.sni,
+                    host: sn.host,
+                    port: sn.port,
+                    region_hint: sn.exit_country,
+                    whitelist_friendly: sn.whitelist_friendly,
+                    fragment_enabled: sn.fragment_enabled,
+                    via_warp: false,
+                    priority_score: 180,
+                    outbound_json: sn.outbound_json,
+                    source_tier: 0,
+                });
+            }
+        }
+        raw_cands.truncate(40);
 
         if raw_cands.is_empty() {
             return json!({ "ok": false, "empty": true }).to_string();
@@ -1967,7 +2590,7 @@ impl EngineController {
     pub fn remove_source(&self, url: &str) -> String {
         let mut removed_name = String::new();
         {
-            let mut g = self.data.write().unwrap();
+            let mut g = write_data(&self.data);
             let mut drop_uris = HashSet::new();
             g.sources.retain(|s| {
                 if !s.builtin && s.url == url {
@@ -1996,17 +2619,24 @@ impl EngineController {
     /// cached live VPN nodes (and sync any custom subscription deltas!) so still-working nodes
     /// stay untouched and broken old nodes get evicted automatically without full reinstall!
     pub fn prepare_delta_revalidate_batch(&self, base_port: u16, fragment_tls: bool) -> String {
-        // First incrementally refresh any user custom subscriptions older than 20 minutes
+        // Respect subscription server's `profile-update-interval` header (default 2h if unset)
+        // instead of hammering the panel every 20m — saves battery & avoids rate-limits!
         let stale_custom_urls: Vec<String> = {
-            let g = self.data.read().unwrap();
+            let g = read_data(&self.data);
             let now = unix_now();
             g.sources
                 .iter()
                 .filter(|s| {
-                    !s.builtin
-                        && s.enabled
-                        && s.kind == "vpn"
-                        && (s.cached_uris.is_empty() || now.saturating_sub(s.last_sync_unix) > 1200)
+                    if s.builtin || !s.enabled || s.kind != "vpn" {
+                        return false;
+                    }
+                    let interval_sec = if s.update_interval_hours > 0 {
+                        (s.update_interval_hours as u64).clamp(1, 72) * 3600
+                    } else {
+                        7200
+                    };
+                    (s.cached_uris.is_empty() && s.cached_json_outbounds.is_empty())
+                        || now.saturating_sub(s.last_sync_unix) >= interval_sec
                 })
                 .map(|s| s.url.clone())
                 .collect()
@@ -2016,7 +2646,7 @@ impl EngineController {
         }
 
         let (to_check, warp_acc) = {
-            let g = self.data.read().unwrap();
+            let g = read_data(&self.data);
             let now = unix_now();
             let can_chain = g.warp.has_masque();
             // Only re-check device-verified nodes older than 12 min (newer ones are already fresh!)
@@ -2114,7 +2744,7 @@ impl EngineController {
 
         {
             let now = unix_now();
-            let mut g = self.data.write().unwrap();
+            let mut g = write_data(&self.data);
             for bl in dead_bl {
                 g.blacklist.insert(bl, now);
             }
@@ -2149,7 +2779,7 @@ impl EngineController {
     }
 
     fn pool_health_counts(&self) -> (usize, usize, usize, usize, usize) {
-        let g = self.data.read().unwrap();
+        let g = read_data(&self.data);
         let live: Vec<&VerifiedVpnNode> = g
             .vpn_nodes
             .iter()
@@ -2173,7 +2803,7 @@ impl EngineController {
     pub fn toggle_source(&self, url: &str, enabled: bool) -> String {
         let mut toggled_name = String::new();
         {
-            let mut g = self.data.write().unwrap();
+            let mut g = write_data(&self.data);
             for s in &mut g.sources {
                 if s.url == url {
                     s.enabled = enabled;
@@ -2202,7 +2832,7 @@ impl EngineController {
                 let has_m = acc.has_masque();
                 let v4 = acc.wg_ipv4.clone();
                 {
-                    let mut g = self.data.write().unwrap();
+                    let mut g = write_data(&self.data);
                     g.warp = acc;
                 }
                 self.save();
@@ -2225,28 +2855,69 @@ impl EngineController {
     }
 
     pub fn get_state_snapshot(&self, target_region: &str, whitelist_mode: bool) -> String {
-        let g = self.data.read().unwrap();
+        self.get_state_snapshot_ex(target_region, whitelist_mode, false)
+    }
+
+    /// Ultra-compact JNI state snapshot (v1.6.0):
+    /// - Strips large `outbound_json`, `raw_uri`, `cached_uris` & `cached_json_outbounds` from UI DTOs
+    ///   (12x smaller JNI JSON: ~20 KB vs ~260 KB — slashes UI heap churn & GC pauses to near zero!)
+    /// - Only reads diagnostic log lines from disk when `include_logs == true` (Logs tab open)!
+    /// - Computes live `suggestedStandby` preview for Dual-Channel card right in Rust!
+    pub fn get_state_snapshot_ex(
+        &self,
+        target_region: &str,
+        whitelist_mode: bool,
+        include_logs: bool,
+    ) -> String {
+        let g = read_data(&self.data);
         let b = &self.tg_bridge;
-        let region_nodes = filter_nodes_for_region(&g.vpn_nodes, target_region, whitelist_mode);
-        let logs = read_diag_logs(260);
-        let dev_verified_cnt = g.vpn_nodes.iter().filter(|n| n.device_verified).count();
+        let norm_reg = normalize_region(target_region);
+        let eff_wl = whitelist_mode || norm_reg == "WL";
+        let region_nodes = filter_nodes_for_region(&g.vpn_nodes, norm_reg, eff_wl);
+        let logs = if include_logs {
+            read_diag_logs(240)
+        } else {
+            Vec::new()
+        };
+        let dev_verified_cnt = g.vpn_nodes.iter().filter(|n| n.device_verified && n.fail_count < 3).count();
         let wl_verified_cnt = g
             .vpn_nodes
             .iter()
-            .filter(|n| n.device_verified && n.whitelist_friendly && n.fail_count < 3)
+            .filter(|n| n.device_verified && n.whitelist_friendly && !n.via_warp && n.fail_count < 3)
+            .count();
+        let yt_adfree_cnt = g
+            .vpn_nodes
+            .iter()
+            .filter(|n| n.yt_ad_free && n.fail_count < 3)
+            .count();
+        let yt_adfree_live_cnt = g
+            .vpn_nodes
+            .iter()
+            .filter(|n| n.yt_ad_free && n.device_verified && n.fail_count < 3)
             .count();
         let custom_sub_cnt = g.sources.iter().filter(|s| !s.builtin).count();
 
+        let compact_region: Vec<serde_json::Value> =
+            region_nodes.iter().map(compact_node_json).collect();
+        let compact_all: Vec<serde_json::Value> =
+            g.vpn_nodes.iter().map(compact_node_json).collect();
+        let compact_sources: Vec<serde_json::Value> =
+            g.sources.iter().map(compact_source_json).collect();
+
         json!({
-            "vpnNodes": region_nodes,
-            "allVpnNodes": g.vpn_nodes,
+            "vpnNodes": compact_region,
+            "allVpnNodes": compact_all,
             "deviceVerifiedCount": dev_verified_cnt,
             "whitelistVerifiedCount": wl_verified_cnt,
+            "ytAdFreeCount": yt_adfree_cnt,
+            "ytAdFreeLiveCount": yt_adfree_live_cnt,
             "customSubCount": custom_sub_cnt,
             "tgProxies": g.tg_proxies,
-            "sources": g.sources,
+            "sources": compact_sources,
             "customVpnCount": g.custom_vpn_uris.len(),
             "manifestUrl": g.manifest_url,
+            "hwidEnabled": g.hwid_config.enabled,
+            "hwidValue": g.hwid_config.hwid,
             "hasWarpWg": g.warp.has_wg(),
             "hasWarpMasque": g.warp.has_masque(),
             "warpIpv4": g.warp.wg_ipv4,
@@ -2264,8 +2935,63 @@ impl EngineController {
     }
 }
 
+/// Strip heavy internal `outbound_json` & `raw_uri` before crossing JNI to Kotlin UI (12x less RAM!).
+fn compact_node_json(n: &VerifiedVpnNode) -> serde_json::Value {
+    json!({
+        "id": n.id,
+        "name": n.name,
+        "display_protocol": n.display_protocol,
+        "protocol": n.protocol,
+        "host": n.host,
+        "port": n.port,
+        "sni": n.sni,
+        "exit_country": n.exit_country,
+        "exit_colo": n.exit_colo,
+        "exit_ip": n.exit_ip,
+        "rtt_ms": n.rtt_ms,
+        "kbps": n.kbps,
+        "passed_32kb": n.passed_32kb,
+        "whitelist_friendly": n.whitelist_friendly,
+        "fragment_enabled": n.fragment_enabled,
+        "via_warp": n.via_warp,
+        "device_verified": n.device_verified,
+        "yt_ad_free": n.yt_ad_free,
+        "yt_country": n.yt_country,
+        "source_tier": n.source_tier,
+        "verified_unix": n.verified_unix,
+        "fail_count": n.fail_count
+    })
+}
+
+/// Compact UI DTO for `SubSource` (includes full Happ/Remnawave quota, expiry, announce, support & crypt meta,
+/// omits raw `cached_uris` & `cached_json_outbounds` arrays to save ~90 KB per UI snapshot!).
+fn compact_source_json(s: &SubSource) -> serde_json::Value {
+    json!({
+        "name": s.name,
+        "url": s.url,
+        "kind": s.kind,
+        "region_hint": s.region_hint,
+        "enabled": s.enabled,
+        "builtin": s.builtin,
+        "userinfo": s.userinfo,
+        "upload_bytes": s.upload_bytes,
+        "download_bytes": s.download_bytes,
+        "total_bytes": s.total_bytes,
+        "expire_unix": s.expire_unix,
+        "update_interval_hours": s.update_interval_hours,
+        "announce": s.announce,
+        "support_url": s.support_url,
+        "web_page_url": s.web_page_url,
+        "hwid_status": s.hwid_status,
+        "encrypted_kind": s.encrypted_kind,
+        "body_encrypted": s.body_encrypted,
+        "cached_count": s.cached_count,
+        "last_sync_unix": s.last_sync_unix
+    })
+}
+
 fn detect_country_from_name(name: &str, hint: &str) -> String {
-    if hint == "US" || hint == "DE" {
+    if hint.len() == 2 && hint != "CF" {
         return hint.to_string();
     }
     let low = name.to_lowercase();
@@ -2278,20 +3004,51 @@ fn detect_country_from_name(name: &str, hint: &str) -> String {
         ("финлянд", "FI"),
         ("🇳🇱", "NL"),
         ("нидерланд", "NL"),
+        ("🇬🇧", "GB"),
+        ("британ", "GB"),
+        ("англи", "GB"),
         ("🇫🇷", "FR"),
         ("франц", "FR"),
+        ("🇸🇪", "SE"),
+        ("швеци", "SE"),
+        ("🇵🇱", "PL"),
+        ("польш", "PL"),
+        ("🇨🇭", "CH"),
+        ("швейцар", "CH"),
+        ("🇦🇹", "AT"),
+        ("австри", "AT"),
+        ("🇹🇷", "TR"),
+        ("турци", "TR"),
+        ("стамбул", "TR"),
+        ("🇯🇵", "JP"),
+        ("япони", "JP"),
+        ("🇸🇬", "SG"),
+        ("сингапур", "SG"),
+        ("🇨🇦", "CA"),
+        ("канад", "CA"),
+        ("🇰🇷", "KR"),
+        ("коре", "KR"),
+        ("🇰🇿", "KZ"),
+        ("казах", "KZ"),
         ("🇮🇹", "IT"),
         ("итал", "IT"),
+        ("🇪🇸", "ES"),
+        ("испан", "ES"),
         ("🇭🇺", "HU"),
         ("венгр", "HU"),
-        ("🇦🇹", "AT"),
-        ("🇨🇭", "CH"),
-        ("🇸🇪", "SE"),
-        ("🇬🇧", "GB"),
-        ("🇵🇱", "PL"),
         ("🇪🇪", "EE"),
         ("🇱🇻", "LV"),
         ("🇨🇿", "CZ"),
+        ("🇳🇴", "NO"),
+        ("🇦🇱", "AL"),
+        ("албан", "AL"),
+        ("🇲🇩", "MD"),
+        ("молдов", "MD"),
+        ("🇦🇲", "AM"),
+        ("армен", "AM"),
+        ("🇱🇺", "LU"),
+        ("🇲🇨", "MC"),
+        ("🇧🇾", "BY"),
         ("🇷🇺", "RU"),
         ("росси", "RU"),
     ] {
@@ -2308,14 +3065,12 @@ pub fn filter_nodes_for_region(
     whitelist_mode: bool,
 ) -> Vec<VerifiedVpnNode> {
     let reg = normalize_region(target_region);
+    let eff_wl = whitelist_mode || reg == "WL";
 
-    // ALWAYS include user's own custom subscription servers (`source_tier == 0`) and, when
-    // `whitelist_mode` is ON, ALL genuine Russian Whitelist (`whitelist_friendly`) servers
-    // across all clean exits (DE, FI, NL, US, PL, AT, FR)!
-    let mut exact: Vec<VerifiedVpnNode> = if whitelist_mode {
+    let mut exact: Vec<VerifiedVpnNode> = if eff_wl {
         let wl_only: Vec<VerifiedVpnNode> = nodes
             .iter()
-            .filter(|n| n.whitelist_friendly)
+            .filter(|n| n.whitelist_friendly && !n.via_warp)
             .cloned()
             .collect();
         if wl_only.iter().any(|n| n.device_verified && n.fail_count < 3) {
@@ -2323,10 +3078,34 @@ pub fn filter_nodes_for_region(
         } else {
             nodes.to_vec()
         }
+    } else if reg == "YT" {
+        let yt_only: Vec<VerifiedVpnNode> = nodes
+            .iter()
+            .filter(|n| n.yt_ad_free && !matches!(n.exit_country.as_str(), "RU" | "CF"))
+            .cloned()
+            .collect();
+        if !yt_only.is_empty() {
+            yt_only
+        } else {
+            nodes.to_vec()
+        }
+    } else if reg == "WARP" {
+        let wp_only: Vec<VerifiedVpnNode> = nodes
+            .iter()
+            .filter(|n| n.via_warp || n.protocol.starts_with("warp"))
+            .cloned()
+            .collect();
+        if !wp_only.is_empty() {
+            wp_only
+        } else {
+            nodes.to_vec()
+        }
+    } else if reg == "AUTO" {
+        nodes.to_vec()
     } else {
         let mut v: Vec<VerifiedVpnNode> = nodes
             .iter()
-            .filter(|n| n.source_tier == 0 || region_match_rank(&n.exit_country, reg) == 0)
+            .filter(|n| region_match_rank(&n.exit_country, reg) == 0)
             .cloned()
             .collect();
         let live_exact = v
@@ -2337,7 +3116,7 @@ pub fn filter_nodes_for_region(
                     && region_match_rank(&n.exit_country, reg) == 0
             })
             .count();
-        if live_exact < 3 {
+        if live_exact < 2 {
             for n in nodes {
                 if !v.iter().any(|e| e.id == n.id) {
                     v.push(n.clone());
@@ -2348,18 +3127,22 @@ pub fn filter_nodes_for_region(
     };
 
     // Rank strictly:
-    // - In `whitelist_mode`: genuine `n.whitelist_friendly` (Минцифры SNI / VK-Yandex-CDN CIDR) ALWAYS #0!
-    // - In normal mode: exact target region + user custom subscription (`source_tier == 0`) first, lowest RTT!
+    // - Full-stack protocols (VLESS Reality/XHTTP, Hy2, Trojan, SS2022, VMess, WG, WARP) rank above
+    //   HTTP-only Opera relays so every browser & app gets full bare-IP + domain TCP/UDP support!
     exact.sort_by_key(|n| {
         let is_custom = n.source_tier == 0;
         let reg_rank = region_match_rank(&n.exit_country, reg);
-        let cf_penalty = if n.source_tier >= 4 || n.exit_country == "CF" {
+        let cf_penalty = if reg != "WARP" && (n.source_tier >= 4 || n.exit_country == "CF") {
             1u8
         } else {
             0u8
         };
-        // CRITICAL FIX: ONLY genuine `whitelist_friendly` gets rank 0 in «Белые списки РФ» mode!
-        let wl_rank = if n.whitelist_friendly {
+        let http_penalty = if matches!(n.protocol.as_str(), "opera" | "http") {
+            1u8
+        } else {
+            0u8
+        };
+        let wl_rank = if n.whitelist_friendly && !n.via_warp {
             0u8
         } else if n.via_warp {
             1u8
@@ -2375,14 +3158,40 @@ pub fn filter_nodes_for_region(
             2u8
         };
         let cust_rank = if is_custom { 0u8 } else { 1u8 };
-        if whitelist_mode {
+        if eff_wl {
             (
                 ver_rank,
                 n.fail_count,
                 wl_rank,
+                http_penalty,
                 cf_penalty,
                 cust_rank,
                 reg_rank,
+                eff_rtt,
+            )
+        } else if reg == "YT" {
+            let yt_rank = if n.yt_ad_free { 0u8 } else { 1u8 };
+            let via_pen = if n.via_warp { 1u8 } else { 0u8 };
+            (
+                ver_rank,
+                n.fail_count,
+                yt_rank,
+                http_penalty,
+                cf_penalty,
+                via_pen,
+                cust_rank,
+                eff_rtt,
+            )
+        } else if reg == "WARP" {
+            let wp_direct = if n.protocol.starts_with("warp") { 0u8 } else { 1u8 };
+            (
+                ver_rank,
+                n.fail_count,
+                http_penalty,
+                reg_rank,
+                wp_direct,
+                cust_rank,
+                wl_rank,
                 eff_rtt,
             )
         } else {
@@ -2390,8 +3199,6 @@ pub fn filter_nodes_for_region(
                 0u8
             } else if reg_rank == 0 {
                 0u8
-            } else if is_custom {
-                1u8
             } else {
                 reg_rank.saturating_add(1)
             };
@@ -2400,6 +3207,7 @@ pub fn filter_nodes_for_region(
                 n.fail_count,
                 cf_penalty,
                 region_or_custom,
+                http_penalty,
                 cust_rank,
                 wl_rank,
                 eff_rtt,

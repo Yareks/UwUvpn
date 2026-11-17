@@ -50,12 +50,14 @@ impl OperaSessionCache {
     pub fn is_fresh(&self) -> bool {
         let now = unix_now();
         let has_us = self.endpoints.iter().any(|e| e.region == "US");
-        let has_eu = self.endpoints.iter().any(|e| e.region == "DE");
+        let has_eu = self.endpoints.iter().any(|e| matches!(e.region.as_str(), "NL" | "DE"));
+        // SurfEasy device passwords expire every ~60m; refresh every 35m so active & cached
+        // relays never hit HTTP 407 Proxy Authentication Required!
         has_us
             && has_eu
             && !self.assigned_device_id_hash.is_empty()
             && !self.device_password.is_empty()
-            && now.saturating_sub(self.refreshed_unix) < 3 * 3600
+            && now.saturating_sub(self.refreshed_unix) < 35 * 60
     }
 }
 
@@ -115,18 +117,18 @@ fn parse_digest_challenge(hdr: &str) -> Option<HashMap<String, String>> {
         i += 1; // skip '='
         let val = if i < bytes.len() && bytes[i] == b'"' {
             i += 1;
-            let mut s = String::new();
+            let mut raw = Vec::new();
             while i < bytes.len() && bytes[i] != b'"' {
                 if bytes[i] == b'\\' && i + 1 < bytes.len() {
                     i += 1;
                 }
-                s.push(bytes[i] as char);
+                raw.push(bytes[i]);
                 i += 1;
             }
             if i < bytes.len() {
                 i += 1; // closing '"'
             }
-            s
+            String::from_utf8_lossy(&raw).into_owned()
         } else {
             let v_start = i;
             while i < bytes.len() && bytes[i] != b',' {
@@ -419,11 +421,11 @@ pub async fn provision_opera_endpoints(
     }
 
     let now = unix_now();
-    let expires = now + 4 * 3600;
+    let expires = now + 45 * 60;
     let mut endpoints = Vec::new();
 
-    // Discover both AM (USA) and EU (Europe/Germany) proxy servers (with 1 retry on mobile LTE loss)
-    for (opera_geo, region_label) in [("AM", "US"), ("EU", "DE")] {
+    // Discover AM (USA), EU (Europe/NL/DE), and AS (Asia/Singapore) official 10 Gbps relays
+    for (opera_geo, region_label) in [("AM", "US"), ("EU", "NL"), ("AS", "SG")] {
         let req_geo = format!("\"{opera_geo}\",,");
         let mut disc_opt = None;
         for _ in 0..2 {
@@ -445,7 +447,7 @@ pub async fn provision_opera_endpoints(
         }
         if let Some(disc) = disc_opt {
             if let Some(ips) = disc.pointer("/data/ips").and_then(|v| v.as_array()) {
-                for entry in ips.iter().take(4) {
+                for entry in ips.iter().take(3) {
                     let Some(ip) = entry.get("ip").and_then(|v| v.as_str()) else {
                         continue;
                     };
