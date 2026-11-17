@@ -13,8 +13,8 @@ use crate::net_util::{
 use crate::opera::{provision_opera_endpoints, OperaSessionCache};
 use crate::sources::{
     content_hash_short, default_sources, extract_vpn_uris_from_subscription,
-    fetch_remote_manifest, fetch_vpn_candidates, is_dummy_banner_uri, is_rf_blocked_sni,
-    is_whitelist_remark, SubSource, VerifiedVpnNode, VpnCandidate,
+    fetch_remote_manifest, fetch_vpn_candidates, is_dummy_banner_uri, is_pure_russia_exit_remark,
+    is_rf_blocked_sni, is_whitelist_remark, SubSource, VerifiedVpnNode, VpnCandidate,
 };
 use crate::tg_bridge::{probe_tg_ws_direct, start_tg_bridge, TgLocalBridge};
 use crate::tg_checker::{
@@ -22,16 +22,16 @@ use crate::tg_checker::{
     verify_tg_candidate_strict, TgCheckProgress, VerifiedTgProxy,
 };
 use crate::vpn_probe::{
-    check_active_tunnel_health, fast_verify_seed_nodes, region_match_rank,
+    check_active_tunnel_health, check_services_live, fast_verify_seed_nodes, region_match_rank,
     revalidate_cached_nodes_via_socks, tcp_prefilter_candidates_ex, verify_batch_via_socks,
     TunnelHealthResult,
 };
 use crate::warp::{provision_warp_account, WarpAccountCache};
 use crate::xray_config::{
-    build_batch_probe_config, build_production_tun_config_v16, candidate_to_warp_chain,
+    build_batch_probe_config, build_production_tun_config_v17, candidate_to_warp_chain,
     node_matches_strict_region, opera_endpoints_to_candidates,
     opera_endpoints_to_warp_chain_candidates, parse_share_uri_to_candidate,
-    parse_xray_json_config_to_candidates, warp_account_to_candidates,
+    parse_xray_json_config_to_candidates, warp_account_to_candidates, CustomDomainRules,
 };
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -142,27 +142,36 @@ fn socks_opt(port: u16) -> Option<SocketAddr> {
     }
 }
 
-fn normalize_region(target_region: &str) -> &'static str {
+pub fn normalize_region(target_region: &str) -> &'static str {
     match target_region.trim().to_ascii_uppercase().as_str() {
         "YT" | "NOADS" | "ADFREE" => "YT",
-        "AL" => "AL",
-        "MD" => "MD",
-        "US" => "US",
         "DE" => "DE",
+        "US" => "US",
         "NL" => "NL",
         "FI" => "FI",
         "GB" | "UK" => "GB",
         "FR" => "FR",
         "SE" => "SE",
         "PL" => "PL",
-        "CH" | "AT" => "CH",
+        "CH" => "CH",
+        "AT" => "AT",
+        "CZ" => "CZ",
+        "IT" => "IT",
+        "ES" => "ES",
+        "PT" => "PT",
+        "HU" => "HU",
+        "AL" => "AL",
+        "MD" => "MD",
         "TR" => "TR",
+        "KZ" => "KZ",
         "JP" => "JP",
         "SG" => "SG",
         "CA" => "CA",
         "EU" => "EU",
         "WL" => "WL",
         "WARP" => "WARP",
+        // Domestic Russia is never a VPN target — redirect cleanly to priority Germany (DE)
+        "RU" => "DE",
         _ => "AUTO",
     }
 }
@@ -176,7 +185,7 @@ impl Default for EngineController {
 impl EngineController {
     pub fn new() -> Self {
         let init = PersistedData {
-            version: 7,
+            version: 8,
             sources: default_sources(),
             ..Default::default()
         };
@@ -234,27 +243,37 @@ impl EngineController {
             PersistedData::default()
         };
 
-        // Seamless upgrade migration (v1..v6 -> v7 / VeloxVPN v1.6.0):
-        // - Preserve Cloudflare WARP MASQUE credentials, custom subscriptions, HWID & working nodes
-        // - Prune removed 404 built-in feeds & stale Opera relays, keep 0%-ad YT tags & Dual-Channel pool
+        // Seamless upgrade migration (v1..v7 -> v8 / VeloxVPN v1.7.0):
+        // - Remove ALL domestic Russian (`RU`) exit nodes (we replace Russia with foreign IPs!)
+        // - Strip confusing `[RU]` labels from foreign 0%-ad YouTube servers
+        // - Reset false failover `fail_count` from pre-v1.7, preserve WARP, custom subs, HWID & live pool
         let now_mig = unix_now();
         let mut mutated = false;
-        if loaded.version < 7 {
+        if loaded.version < 8 {
             let prev_ver = loaded.version;
-            loaded.version = 7;
+            loaded.version = 8;
             loaded.vpn_nodes.retain(|n| {
                 let drop_opera = matches!(n.protocol.as_str(), "opera" | "http")
                     && (prev_ver < 6
-                        || (n.verified_unix > 0 && now_mig.saturating_sub(n.verified_unix) > 45 * 60));
-                let drop_ru_public = n.source_tier != 0 && n.exit_country == "RU";
-                !drop_opera && !drop_ru_public && (n.source_tier == 0 || !is_rf_blocked_sni(&n.sni))
+                        || (n.verified_unix > 0
+                            && now_mig.saturating_sub(n.verified_unix) > 45 * 60));
+                let drop_ru = n.exit_country.eq_ignore_ascii_case("RU")
+                    || (!n.whitelist_friendly && is_pure_russia_exit_remark(&n.name));
+                !drop_opera && !drop_ru && (n.source_tier == 0 || !is_rf_blocked_sni(&n.sni))
             });
             for n in &mut loaded.vpn_nodes {
                 if n.via_warp {
                     n.whitelist_friendly = false;
                 }
-                if n.device_verified && prev_ver < 6 {
+                if n.name.contains(" [RU]") {
+                    n.name = n.name.replace(" [RU]", "");
+                }
+                if n.device_verified || n.source_tier == 0 {
                     n.fail_count = 0;
+                    n.last_fail_unix = 0;
+                }
+                if n.device_verified && n.ok_streak == 0 {
+                    n.ok_streak = 1;
                 }
                 if !n.via_warp && is_whitelist_remark(&n.name) && !is_rf_blocked_sni(&n.sni) {
                     n.whitelist_friendly = true;
@@ -273,15 +292,12 @@ impl EngineController {
             loaded
                 .sources
                 .retain(|s| !s.builtin || valid_builtins.contains(&s.url));
-            if prev_ver < 6 {
-                loaded.blacklist.clear();
-            }
+            loaded.blacklist.clear();
             if prev_ver > 0 {
                 diag_info(
                     "SYS",
                     format!(
-                        "Обновление v1.6 (Dual-Channel 0мс + Happ crypt1–5 + Zero-Idle): WARP={}, живых VPN={}, подписок={}",
-                        loaded.warp.has_masque(),
+                        "Обновление v1.7 (Анти-разрыв + Резерв Страна/DE/US + 0% RU + 250+ сервисов): живых VPN={}, подписок={}",
                         loaded.vpn_nodes.iter().filter(|n| n.device_verified).count(),
                         loaded.sources.iter().filter(|s| !s.builtin).count()
                     ),
@@ -306,15 +322,27 @@ impl EngineController {
             .retain(|_, ts| now.saturating_sub(*ts) < 5400);
         let vpn_before = loaded.vpn_nodes.len();
         loaded.vpn_nodes.retain(|n| {
-            !(n.protocol == "opera"
-                && n.verified_unix > 0
-                && now.saturating_sub(n.verified_unix) > 45 * 60)
+            !n.exit_country.eq_ignore_ascii_case("RU")
+                && !(n.protocol == "opera"
+                    && n.verified_unix > 0
+                    && now.saturating_sub(n.verified_unix) > 45 * 60)
         });
+        // Gently recover custom subscription nodes whose temporary failure happened > 30 min ago
+        for n in &mut loaded.vpn_nodes {
+            if n.source_tier == 0
+                && n.fail_count > 0
+                && n.last_fail_unix > 0
+                && now.saturating_sub(n.last_fail_unix) > 1800
+            {
+                n.fail_count = 0;
+                mutated = true;
+            }
+        }
         if loaded.blacklist.len() != bl_before || loaded.vpn_nodes.len() != vpn_before {
             mutated = true;
         }
 
-        // Seed initial LKG pool on very first install (always marked `device_verified = false`)
+        // Seed initial LKG pool on very first install (always marked `device_verified = false`, 0% RU!)
         if !seed_json.trim().is_empty() && loaded.vpn_nodes.is_empty() && loaded.tg_proxies.is_empty()
         {
             if let Ok(seed) = serde_json::from_str::<BootstrapSeed>(seed_json) {
@@ -322,8 +350,14 @@ impl EngineController {
                     loaded.vpn_nodes = seed
                         .vpn_nodes
                         .into_iter()
-                        .filter(|n| !is_rf_blocked_sni(&n.sni))
+                        .filter(|n| {
+                            !n.exit_country.eq_ignore_ascii_case("RU")
+                                && !is_rf_blocked_sni(&n.sni)
+                        })
                         .map(|mut n| {
+                            if n.name.contains(" [RU]") {
+                                n.name = n.name.replace(" [RU]", "");
+                            }
                             n.device_verified = false;
                             n.fail_count = 0;
                             n
@@ -365,7 +399,7 @@ impl EngineController {
             diag_info(
                 "SYS",
                 format!(
-                    "Velox Engine v1.6 готов (VPN: {vpn_cnt} [живых: {dev_verified_cnt}], TG: {tg_cnt}, Dual-Channel 0мс + Happ crypt1–5)"
+                    "Velox Engine v1.7 готов (VPN: {vpn_cnt} [живых: {dev_verified_cnt}], TG: {tg_cnt}, 2× Резерв Страна/DE/US, 0% RU, 250+ сервисов)"
                 ),
             );
         }
@@ -1290,6 +1324,38 @@ impl EngineController {
         socks_user: &str,
         socks_pass: &str,
     ) -> String {
+        self.build_tun_config_v17(
+            target_region,
+            pinned_node_id,
+            whitelist_mode,
+            bypass_ru,
+            fragment_tls,
+            adblock,
+            dual_channel,
+            idle_power_save,
+            local_socks_port,
+            socks_user,
+            socks_pass,
+            "",
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_tun_config_v17(
+        &self,
+        target_region: &str,
+        pinned_node_id: &str,
+        whitelist_mode: bool,
+        bypass_ru: bool,
+        fragment_tls: bool,
+        adblock: bool,
+        dual_channel: bool,
+        idle_power_save: bool,
+        local_socks_port: u16,
+        socks_user: &str,
+        socks_pass: &str,
+        custom_rules_json: &str,
+    ) -> String {
         let region = normalize_region(target_region);
         let pinned_opt = if pinned_node_id.trim().is_empty() {
             None
@@ -1310,13 +1376,14 @@ impl EngineController {
                 g.last_vpn_refresh_unix,
             )
         };
-        let any_device_verified = all_nodes
-            .iter()
-            .any(|n| n.device_verified && n.fail_count < 3);
+        let any_device_verified = all_nodes.iter().any(|n| {
+            n.device_verified && n.fail_count < 3 && !n.exit_country.eq_ignore_ascii_case("RU")
+        });
         let any_foreign_verified = all_nodes.iter().any(|n| {
             n.device_verified
                 && n.fail_count < 3
-                && (n.source_tier == 0 || (n.source_tier <= 3 && !matches!(n.exit_country.as_str(), "CF" | "RU")))
+                && !matches!(n.exit_country.as_str(), "CF" | "RU" | "ru")
+                && (n.source_tier == 0 || n.source_tier <= 3)
         });
 
         if pinned_opt.is_none() && !any_device_verified {
@@ -1349,6 +1416,10 @@ impl EngineController {
         let live_only: Vec<VerifiedVpnNode> = all_nodes
             .into_iter()
             .filter(|n| {
+                // Zero-RU guarantee: never mount a domestic Russian exit server!
+                if n.exit_country.eq_ignore_ascii_case("RU") {
+                    return false;
+                }
                 let is_pin = pinned_opt == Some(n.id.as_str());
                 let stale_op = !is_pin
                     && n.protocol == "opera"
@@ -1455,8 +1526,21 @@ impl EngineController {
         } else {
             None
         };
+        let custom_rules = CustomDomainRules::from_json_str(custom_rules_json);
 
-        match build_production_tun_config_v16(
+        // Include full verified foreign pool so `standby_priority_key` always finds #1 same-country
+        // and #2 Germany/USA reserves even if `filter_nodes_for_region` truncated!
+        for vn in &live_only {
+            if vn.device_verified
+                && !vn.exit_country.eq_ignore_ascii_case("RU")
+                && !pool.iter().any(|p| p.id == vn.id)
+                && (!is_strict_country || node_matches_strict_region(vn, region, eff_wl))
+            {
+                pool.push(vn.clone());
+            }
+        }
+
+        match build_production_tun_config_v17(
             &pool,
             pinned_opt,
             region,
@@ -1469,21 +1553,30 @@ impl EngineController {
             local_socks_port,
             auth_opt,
             Some(&warp_snapshot),
+            Some(&custom_rules),
         ) {
             Ok(plan) => {
                 let primary = plan.primary;
                 let standby = plan.standby;
+                let standby_tier = plan.standby_tier;
                 let age_sec = now.saturating_sub(primary.verified_unix);
                 let freshly_verified =
                     primary.device_verified && age_sec <= 900 && primary.fail_count == 0;
-                // If Dual-Channel is ON but only 1 server exists in the chosen country (no `vpn_1` yet),
-                // ask `VeloxVpnService` to quietly replenish a 2nd server in background after connect!
-                let needs_standby_replenish =
-                    dual_channel && standby.is_none() && now.saturating_sub(last_refresh) > 45;
+                // Replenish quietly if we lack a standby OR if standby isn't yet same-country or DE/US!
+                let needs_standby_replenish = dual_channel
+                    && (standby.is_none()
+                        || (standby_tier == "foreign" && now.saturating_sub(last_refresh) > 300))
+                    && now.saturating_sub(last_refresh) > 45;
+                let tier_lbl = match standby_tier.as_str() {
+                    "same_country" => "та же страна",
+                    "de_us" => "приоритет DE/US",
+                    "foreign" => "зарубеж.",
+                    _ => "поиск",
+                };
                 let sb_desc = match &standby {
                     Some(sb) => format!(
-                        "{} [{} · {}мс]",
-                        sb.name, sb.exit_country, sb.rtt_ms
+                        "{} [{} · {} · {}мс]",
+                        sb.name, sb.exit_country, tier_lbl, sb.rtt_ms
                     ),
                     None => "поиск резерва".to_string(),
                 };
@@ -1511,6 +1604,7 @@ impl EngineController {
                     "activeNode": pri_json,
                     "primary": pri_json,
                     "standbyNode": sb_json,
+                    "standbyTier": standby_tier,
                     "dualChannelActive": plan.dual_channel_active,
                     "needsStandbyReplenish": needs_standby_replenish,
                     "firstTag": "vpn_0",
@@ -1552,7 +1646,9 @@ impl EngineController {
             let mut g = write_data(&self.data);
             let mut bad_ep = None;
             let mut desc = node_id.to_string();
-            let instant_evict = reason.contains("startupProbe") || reason.contains("ручная смена");
+            let instant_evict = reason.contains("startupProbe")
+                || reason.contains("ручная смена")
+                || reason.contains("РФ (RU)");
             for n in &mut g.vpn_nodes {
                 if n.id == node_id {
                     n.fail_count = if instant_evict {
@@ -1560,6 +1656,11 @@ impl EngineController {
                     } else {
                         n.fail_count.saturating_add(1).min(3)
                     };
+                    n.ok_streak = 0;
+                    n.last_fail_unix = now;
+                    if reason.contains("РФ (RU)") {
+                        n.exit_country = "RU".into();
+                    }
                     desc = format!(
                         "{} [{}] {} sni={} (сбой #{})",
                         n.name,
@@ -1581,8 +1682,11 @@ impl EngineController {
             if let Some(ep) = bad_ep {
                 g.blacklist.insert(ep, now);
             }
-            // Keep Tier-0 paid subscription nodes visible in server list (skipped at fail_count=3 until re-synced)
-            g.vpn_nodes.retain(|n| n.source_tier == 0 || n.fail_count < 3);
+            // Drop dead free nodes & ALL domestic RU nodes; keep foreign Tier-0 sub nodes recoverable
+            g.vpn_nodes.retain(|n| {
+                !n.exit_country.eq_ignore_ascii_case("RU")
+                    && (n.source_tier == 0 || n.fail_count < 3)
+            });
             let rem = g
                 .vpn_nodes
                 .iter()
@@ -1608,9 +1712,82 @@ impl EngineController {
 
         json!({
             "ok": true,
+            "remainingLive": remaining_live,
             "healthyRemaining": remaining_live,
             "needsStandbyReplenish": remaining_live < 2,
             "needsRefresh": remaining_live == 0
+        })
+        .to_string()
+    }
+
+    /// Reward a node that verified clean in live tunnel operation — boosts its stability streak
+    /// (`ok_streak`) and clears transient failures so rock-solid servers stay locked in!
+    pub fn record_node_success(&self, node_id: &str, rtt_ms: u32) -> String {
+        let mut changed = false;
+        {
+            let mut g = write_data(&self.data);
+            for n in &mut g.vpn_nodes {
+                if n.id == node_id {
+                    let prev_streak = n.ok_streak;
+                    n.ok_streak = n.ok_streak.saturating_add(1).min(20);
+                    n.fail_count = 0;
+                    n.last_fail_unix = 0;
+                    n.device_verified = true;
+                    n.verified_unix = unix_now();
+                    if rtt_ms > 0 && rtt_ms < 4000 {
+                        n.rtt_ms = if n.rtt_ms > 0 {
+                            // Exponential moving average reduces RTT jitter spikes
+                            (n.rtt_ms * 2 + rtt_ms) / 3
+                        } else {
+                            rtt_ms
+                        };
+                    }
+                    // Write to disk only on meaningful streak steps (minimizes flash I/O!)
+                    changed = prev_streak < 3 || n.ok_streak % 4 == 0;
+                    break;
+                }
+            }
+        }
+        if changed {
+            self.save();
+        }
+        "{\"ok\":true}".to_string()
+    }
+
+    /// On-demand 12-service live reachability, anti-RU IP & YouTube 0%-ad check (v1.7.0).
+    pub fn check_services(&self, local_socks_port: u16) -> String {
+        let val = TOKIO_RT.block_on(check_services_live(local_socks_port));
+        let passed = val.get("passed").and_then(|v| v.as_u64()).unwrap_or(0);
+        let total = val.get("total").and_then(|v| v.as_u64()).unwrap_or(12);
+        let cc = val.get("exitCountry").and_then(|v| v.as_str()).unwrap_or("-");
+        let ms = val.get("elapsedMs").and_then(|v| v.as_u64()).unwrap_or(0);
+        diag_info(
+            "SVC",
+            format!(
+                "Проверка сервисов ({}): {passed}/{total} доступны · IP={cc} · {ms}мс",
+                if local_socks_port > 0 { "через VPN" } else { "напрямую" }
+            ),
+        );
+        val.to_string()
+    }
+
+    /// Export a clean shareable URI for a saved VPN node (for 1-tap Copy/Share in server list).
+    pub fn export_node_uri(&self, node_id: &str) -> String {
+        let g = read_data(&self.data);
+        if let Some(n) = g.vpn_nodes.iter().find(|n| n.id == node_id) {
+            let uri = n.raw_uri.trim();
+            if !uri.is_empty() && !uri.starts_with("warp-") && !uri.starts_with("opera:") {
+                return json!({
+                    "ok": true,
+                    "uri": uri,
+                    "name": n.name
+                })
+                .to_string();
+            }
+        }
+        json!({
+            "ok": false,
+            "error": "Этот встроенный узел создаётся динамически и не экспортируется в виде ссылки"
         })
         .to_string()
     }
@@ -2014,6 +2191,9 @@ impl EngineController {
                 let mut staged_nodes = Vec::new();
                 for item in items {
                     for c in parse_xray_json_config_to_candidates(item, "Xray JSON", "AUTO", 0) {
+                        if !c.whitelist_friendly && is_pure_russia_exit_remark(&c.name) {
+                            continue;
+                        }
                         let proto_lbl = crate::xray_config::human_protocol_label(&c);
                         let guess_cc = detect_country_from_name(&c.name, &c.region_hint);
                         staged_nodes.push(VerifiedVpnNode {
@@ -2041,6 +2221,8 @@ impl EngineController {
                             outbound_json: c.outbound_json,
                             verified_unix: 0,
                             fail_count: 0,
+                            ok_streak: 0,
+                            last_fail_unix: 0,
                         });
                     }
                 }
@@ -2310,7 +2492,14 @@ impl EngineController {
                     .iter()
                     .filter(|c| !existing_raws.contains(&c.raw_uri))
                     .cloned();
+                let mut skipped_ru_cnt = 0usize;
                 for c in uri_cands.chain(extra_json_cands) {
+                    // Automatically skip domestic Russian (`🇷🇺 Россия`) exits in subscriptions
+                    // (while preserving genuine foreign-exit mobile whitelist relay bridges!)
+                    if !c.whitelist_friendly && is_pure_russia_exit_remark(&c.name) {
+                        skipped_ru_cnt += 1;
+                        continue;
+                    }
                     let proto_lbl = crate::xray_config::human_protocol_label(&c);
                     let guess_cc = detect_country_from_name(&c.name, &c.region_hint);
                     let guess_yt_free = matches!(guess_cc.as_str(), "AL" | "MD" | "MC" | "AD");
@@ -2339,7 +2528,15 @@ impl EngineController {
                         outbound_json: c.outbound_json,
                         verified_unix: 0,
                         fail_count: 0,
+                        ok_streak: 0,
+                        last_fail_unix: 0,
                     });
+                }
+                if skipped_ru_cnt > 0 {
+                    diag_info(
+                        "SRC",
+                        format!("Подписка «{title}»: пропущено {skipped_ru_cnt} узлов РФ (оставлены только зарубежные)"),
+                    );
                 }
                 if !staged.is_empty() {
                     staged.append(&mut g.vpn_nodes);
@@ -2991,7 +3188,7 @@ fn compact_source_json(s: &SubSource) -> serde_json::Value {
 }
 
 fn detect_country_from_name(name: &str, hint: &str) -> String {
-    if hint.len() == 2 && hint != "CF" {
+    if hint.len() == 2 && !matches!(hint, "CF" | "RU") {
         return hint.to_string();
     }
     let low = name.to_lowercase();
@@ -3049,8 +3246,6 @@ fn detect_country_from_name(name: &str, hint: &str) -> String {
         ("🇱🇺", "LU"),
         ("🇲🇨", "MC"),
         ("🇧🇾", "BY"),
-        ("🇷🇺", "RU"),
-        ("росси", "RU"),
     ] {
         if name.contains(flag_or_kw) || low.contains(flag_or_kw) {
             return cc.to_string();
@@ -3060,12 +3255,19 @@ fn detect_country_from_name(name: &str, hint: &str) -> String {
 }
 
 pub fn filter_nodes_for_region(
-    nodes: &[VerifiedVpnNode],
+    raw_nodes: &[VerifiedVpnNode],
     target_region: &str,
     whitelist_mode: bool,
 ) -> Vec<VerifiedVpnNode> {
     let reg = normalize_region(target_region);
     let eff_wl = whitelist_mode || reg == "WL";
+    // Never include domestic Russian (`RU`) exit nodes in VPN pool!
+    let clean_nodes: Vec<VerifiedVpnNode> = raw_nodes
+        .iter()
+        .filter(|n| !n.exit_country.eq_ignore_ascii_case("RU"))
+        .cloned()
+        .collect();
+    let nodes = clean_nodes.as_slice();
 
     let mut exact: Vec<VerifiedVpnNode> = if eff_wl {
         let wl_only: Vec<VerifiedVpnNode> = nodes
@@ -3149,7 +3351,12 @@ pub fn filter_nodes_for_region(
         } else {
             2u8
         };
-        let eff_rtt = if n.rtt_ms == 0 { 9_999 } else { n.rtt_ms };
+        let eff_rtt = if n.rtt_ms == 0 {
+            9_999
+        } else {
+            // Reward proven stability (`ok_streak`) so rock-solid nodes stay preferred
+            n.rtt_ms.saturating_sub((n.ok_streak.min(8) as u32) * 12)
+        };
         let ver_rank = if n.device_verified {
             0u8
         } else if is_custom {

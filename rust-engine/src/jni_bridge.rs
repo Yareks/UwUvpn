@@ -161,18 +161,20 @@ pub extern "system" fn Java_app_velox_vpn_core_VeloxNative_buildTunConfig(
     bypass_ru: jboolean,
     fragment_tls: jboolean,
     adblock: jboolean,
+    local_socks_port: jint,
     dual_channel: jboolean,
     idle_power_save: jboolean,
-    local_socks_port: jint,
     socks_user: JString,
     socks_pass: JString,
+    custom_rules_json: JString,
 ) -> jstring {
     guarded(&mut env, |e| {
         let reg = jstr_in(e, &target_region);
         let pid = jstr_in(e, &pinned_node_id);
         let su = jstr_in(e, &socks_user);
         let sp = jstr_in(e, &socks_pass);
-        ENGINE.build_tun_config_v16(
+        let cr = jstr_in(e, &custom_rules_json);
+        ENGINE.build_tun_config_v17(
             &reg,
             &pid,
             whitelist_mode != 0,
@@ -184,7 +186,49 @@ pub extern "system" fn Java_app_velox_vpn_core_VeloxNative_buildTunConfig(
             local_socks_port.clamp(0, 65535) as u16,
             &su,
             &sp,
+            &cr,
         )
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_app_velox_vpn_core_VeloxNative_checkServices(
+    mut env: JNIEnv,
+    _class: JClass,
+    local_socks_port: jint,
+) -> jstring {
+    guarded(&mut env, |_| {
+        let port = if local_socks_port <= 0 {
+            0u16
+        } else {
+            local_socks_port.clamp(1024, 65535) as u16
+        };
+        ENGINE.check_services(port)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_app_velox_vpn_core_VeloxNative_recordNodeSuccess(
+    mut env: JNIEnv,
+    _class: JClass,
+    node_id: JString,
+    rtt_ms: jint,
+) -> jstring {
+    guarded(&mut env, |e| {
+        let nid = jstr_in(e, &node_id);
+        ENGINE.record_node_success(&nid, rtt_ms.clamp(0, 10000) as u32)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_app_velox_vpn_core_VeloxNative_exportNodeUri(
+    mut env: JNIEnv,
+    _class: JClass,
+    node_id: JString,
+) -> jstring {
+    guarded(&mut env, |e| {
+        let nid = jstr_in(e, &node_id);
+        ENGINE.export_node_uri(&nid)
     })
 }
 

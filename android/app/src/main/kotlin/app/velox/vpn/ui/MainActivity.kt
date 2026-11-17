@@ -32,6 +32,7 @@ import app.velox.vpn.core.AppSettings
 import app.velox.vpn.core.EngineSnapshot
 import app.velox.vpn.core.InstalledAppInfo
 import app.velox.vpn.core.LiveProgressUpdate
+import app.velox.vpn.core.ServicesCheckResult
 import app.velox.vpn.core.TgBridgeStatus
 import app.velox.vpn.core.VeloxNative
 import app.velox.vpn.core.VeloxPrefs
@@ -67,6 +68,8 @@ class MainActivity : ComponentActivity() {
     private var isBusyWarp by mutableStateOf(false)
     private var isBusyImport by mutableStateOf(false)
     private var batteryIgnored by mutableStateOf(true)
+    private var servicesResult by mutableStateOf(ServicesCheckResult())
+    private var isCheckingServices by mutableStateOf(false)
     private var pendingForceRefresh = false
     private var lastHandledDeepLink: String = ""
 
@@ -150,6 +153,9 @@ class MainActivity : ComponentActivity() {
                     isBusyWarp = isBusyWarp,
                     isBusyImport = isBusyImport,
                     batteryIgnored = batteryIgnored,
+                    servicesResult = servicesResult,
+                    isCheckingServices = isCheckingServices,
+                    onCheckServices = ::handleCheckServices,
                     snackbarHostState = snackbarHost,
                     onToggleVpn = ::handleToggleVpn,
                     onRetryFreshVpn = { startVpnWithConsent(forceRefresh = true) },
@@ -940,6 +946,41 @@ class MainActivity : ComponentActivity() {
         }.onFailure {
             runCatching {
                 startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            }
+        }
+    }
+
+    /**
+     * On-demand live 12-service reachability check (AI, Discord, social, streaming, games, work).
+     * Runs through the authenticated loopback SOCKS5 when VPN is active, otherwise directly over
+     * the carrier network so users can see exactly what is blocked without a VPN. 0% idle cost.
+     */
+    private fun handleCheckServices() {
+        if (isCheckingServices) return
+        isCheckingServices = true
+        val rt = VeloxPrefs.loadRuntime(this)
+        val port = VeloxPrefs.resolveActiveLocalSocksPort(this)
+        lifecycleScope.launch(Dispatchers.IO) {
+            val raw = runCatching { VeloxNative.checkServices(port) }.getOrDefault("{}")
+            val parsed = ServicesCheckResult.fromJsonStr(raw)
+            withContext(Dispatchers.Main) {
+                servicesResult = parsed
+                isCheckingServices = false
+                if (parsed.services.isNotEmpty()) {
+                    val viaVpn = if (parsed.viaVpn) "через VPN" else "напрямую"
+                    showSnack(
+                        "Сервисы $viaVpn: ${parsed.passed}/${parsed.services.size} доступны" +
+                            if (parsed.exitCountry.isNotBlank()) " · IP ${parsed.exitCountry}" else ""
+                    )
+                } else if (parsed.error.isNotBlank()) {
+                    showSnack("Ошибка проверки: ${parsed.error}")
+                }
+            }
+            // Refresh runtime state so exit-IP drift / forced RU substitution is visible immediately
+            if (rt.phase == VpnPhase.CONNECTED) {
+                withContext(Dispatchers.Main) {
+                    runtimeState = VeloxPrefs.loadRuntime(this@MainActivity)
+                }
             }
         }
     }

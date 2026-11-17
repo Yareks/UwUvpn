@@ -29,7 +29,7 @@ enum class RuntimeProfileMode(val code: String, val title: String, val subtitle:
 }
 
 data class AppSettings(
-    val region: String = "AUTO",              // AUTO, YT, WL, WARP, US, DE, NL, FI, GB, FR, SE, PL, CH, TR, JP, SG, CA, EU
+    val region: String = "AUTO",              // AUTO, YT, WL, WARP, DE, US, NL, FI, GB, FR, SE, PL, CH, AT, CZ, IT, ES, TR, KZ, JP, SG, CA, EU
     val pinnedNodeId: String = "",
     val dualChannel: Boolean = true,          // Dual-Channel Primary + Hot-Standby zero-drop failover (strictly region-scoped!)
     val sendHwid: Boolean = false,            // Opt-in Happ-compatible X-HWID device header for HWID-locked subscriptions
@@ -41,7 +41,89 @@ data class AppSettings(
     val profileMode: RuntimeProfileMode = RuntimeProfileMode.MOBILE,
     val tgMaxRttMs: Int = 1400,               // Strict Telegram DC resPQ ceiling (300..1400 ms)
     val excludedPackages: Set<String> = emptySet(),
+    // v1.7.0 custom per-site routing rules (comma/space/newline separated domains)
+    val rulesVpn: String = "",                // Force these domains THROUGH VPN
+    val rulesDirect: String = "",             // Force these domains DIRECT (bypass VPN)
+    val rulesBlock: String = "",              // Block these domains (ads/telemetry)
+) {
+    /** Compact JSON consumed by the Rust engine (`{"vpn":[…],"direct":[…],"block":[…]}`). */
+    fun customRulesJson(): String {
+        fun split(raw: String): List<String> = raw
+            .split(',', '\n', ';', ' ')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .take(200)
+        val v = split(rulesVpn)
+        val d = split(rulesDirect)
+        val b = split(rulesBlock)
+        if (v.isEmpty() && d.isEmpty() && b.isEmpty()) return ""
+        fun arr(xs: List<String>): String =
+            xs.joinToString(",", "[", "]") { "\"" + it.replace("\\", "").replace("\"", "") + "\"" }
+        return "{\"vpn\":${arr(v)},\"direct\":${arr(d)},\"block\":${arr(b)}}"
+    }
+}
+
+/** One live service row returned by `VeloxNative.checkServices()`. */
+data class ServiceCheckItem(
+    val id: String,
+    val name: String,
+    val category: String,
+    val ok: Boolean,
+    val rttMs: Int,
+    val detail: String,
 )
+
+/** Aggregate result of the on-demand 12-service live reachability check. */
+data class ServicesCheckResult(
+    val ok: Boolean = false,
+    val viaVpn: Boolean = false,
+    val passed: Int = 0,
+    val total: Int = 12,
+    val elapsedMs: Int = 0,
+    val exitIp: String = "",
+    val exitCountry: String = "",
+    val exitColo: String = "",
+    val ytAdFree: Boolean = false,
+    val services: List<ServiceCheckItem> = emptyList(),
+    val running: Boolean = false,
+    val error: String = "",
+) {
+    companion object {
+        fun fromJsonStr(raw: String): ServicesCheckResult = runCatching {
+            val o = JSONObject(raw)
+            val arr = o.optJSONArray("services")
+            val items = ArrayList<ServiceCheckItem>(arr?.length() ?: 0)
+            if (arr != null) {
+                for (i in 0 until arr.length()) {
+                    val it = arr.optJSONObject(i) ?: continue
+                    items.add(
+                        ServiceCheckItem(
+                            id = it.optString("id"),
+                            name = it.optString("name"),
+                            category = it.optString("category"),
+                            ok = it.optBoolean("ok", false),
+                            rttMs = it.optInt("rttMs", 0),
+                            detail = it.optString("detail"),
+                        )
+                    )
+                }
+            }
+            ServicesCheckResult(
+                ok = o.optBoolean("ok", false),
+                viaVpn = o.optBoolean("viaVpn", false),
+                passed = o.optInt("passed", items.count { it.ok }),
+                total = o.optInt("total", items.size.coerceAtLeast(12)),
+                elapsedMs = o.optInt("elapsedMs", 0),
+                exitIp = o.optString("exitIp"),
+                exitCountry = o.optString("exitCountry"),
+                exitColo = o.optString("exitColo"),
+                ytAdFree = o.optBoolean("ytAdFree", false),
+                services = items,
+            )
+        }.getOrElse { ServicesCheckResult(error = it.message ?: "ошибка проверки") }
+    }
+}
 
 data class VpnRuntimeState(
     val phase: VpnPhase = VpnPhase.DISCONNECTED,
@@ -479,20 +561,30 @@ data class RegionOption(
     val fullLabel: String,
 )
 
+/**
+ * Selectable exit countries/modes for v1.7.0 (Russia is intentionally absent — the VPN replaces
+ * a Russian IP with a foreign one!). Germany (🇩🇪) and USA (🇺🇸) are placed first as priority
+ * countries; the active "current" country additionally always gets #1 reserve priority in-engine.
+ */
 val SELECTABLE_REGIONS: List<RegionOption> = listOf(
-    RegionOption("AUTO", "⚡", "Авто", "Авто (лучший)"),
+    RegionOption("AUTO", "⚡", "Авто", "Авто (лучший + резерв DE/US)"),
+    RegionOption("DE", "🇩🇪", "Германия", "Германия (приоритет резерва)"),
+    RegionOption("US", "🇺🇸", "США", "США (приоритет резерва)"),
     RegionOption("YT", "📺", "YT без рекл.", "YouTube без рекламы (0%)"),
-    RegionOption("WL", "🛡️", "БС РФ", "Белые списки РФ"),
-    RegionOption("FI", "🇫🇮", "Финляндия", "Финляндия"),
+    RegionOption("WL", "🛡️", "БС РФ", "Белые списки РФ (зарубежный выход)"),
     RegionOption("NL", "🇳🇱", "Нидерланды", "Нидерланды"),
-    RegionOption("DE", "🇩🇪", "Германия", "Германия"),
-    RegionOption("US", "🇺🇸", "США", "США"),
+    RegionOption("FI", "🇫🇮", "Финляндия", "Финляндия"),
     RegionOption("GB", "🇬🇧", "Британия", "Великобритания"),
     RegionOption("FR", "🇫🇷", "Франция", "Франция"),
     RegionOption("SE", "🇸🇪", "Швеция", "Швеция"),
     RegionOption("PL", "🇵🇱", "Польша", "Польша"),
     RegionOption("CH", "🇨🇭", "Швейцария", "Швейцария"),
+    RegionOption("AT", "🇦🇹", "Австрия", "Австрия"),
+    RegionOption("CZ", "🇨🇿", "Чехия", "Чехия"),
+    RegionOption("IT", "🇮🇹", "Италия", "Италия"),
+    RegionOption("ES", "🇪🇸", "Испания", "Испания"),
     RegionOption("TR", "🇹🇷", "Турция", "Турция"),
+    RegionOption("KZ", "🇰🇿", "Казахстан", "Казахстан"),
     RegionOption("JP", "🇯🇵", "Япония", "Япония"),
     RegionOption("SG", "🇸🇬", "Сингапур", "Сингапур"),
     RegionOption("CA", "🇨🇦", "Канада", "Канада"),

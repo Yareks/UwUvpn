@@ -248,8 +248,10 @@ pub async fn tcp_prefilter_candidates_ex(
         take_matching(5, &|c| c.whitelist_friendly);
         take_matching(max_output, &|_| true);
     } else {
-        // Guaranteed balanced slots across ALL anti-TSPU protocols, countries & 0%-ad YouTube exits:
-        take_matching(6, &|c| {
+        // Guaranteed strong DE & US backbone reserve slots + balanced anti-TSPU protocols & YT 0%:
+        take_matching(7, &|c| c.region_hint == "DE");
+        take_matching(6, &|c| c.region_hint == "US");
+        take_matching(5, &|c| {
             matches!(
                 c.region_hint.as_str(),
                 "AL" | "MD" | "AM" | "MC" | "AD" | "LU" | "YT"
@@ -260,8 +262,8 @@ pub async fn tcp_prefilter_candidates_ex(
         take_matching(6, &|c| c.whitelist_friendly);
         take_matching(5, &|c| c.security == "reality" && !c.fragment_enabled);
         take_matching(4, &|c| c.security == "reality" && c.fragment_enabled);
-        take_matching(3, &|c| c.protocol == "wireguard");
-        take_matching(5, &|c| {
+        take_matching(2, &|c| c.protocol == "wireguard");
+        take_matching(4, &|c| {
             matches!(c.protocol.as_str(), "trojan" | "vmess" | "shadowsocks" | "socks")
                 || c.transport == "ws"
                 || c.transport == "grpc"
@@ -307,6 +309,9 @@ fn is_filtered_colo(colo: &str) -> bool {
 /// 0 = exact target match, 1 = close low-RTT neighbor, 2 = clean EU/NA/Asia, 3 = other clean exit,
 /// 9 = local Cloudflare WARP anti-TSPU fallback ("CF").
 pub fn region_match_rank(exit_loc: &str, target_region: &str) -> u8 {
+    if exit_loc.eq_ignore_ascii_case("RU") {
+        return 10; // Domestic Russian exit is never accepted as a VPN destination
+    }
     if target_region == "WARP" {
         return if exit_loc == "CF" { 1 } else { 0 };
     }
@@ -343,12 +348,15 @@ pub fn region_match_rank(exit_loc: &str, target_region: &str) -> u8 {
 
     match target_region {
         "AUTO" | "WL" => {
-            if is_eu || exit_loc == "US" {
+            // Prioritize Germany (DE) & USA (US) first, followed by fast EU exits, then global!
+            if matches!(exit_loc, "DE" | "US") {
                 0
-            } else if is_fast_tier {
+            } else if is_eu {
                 1
-            } else {
+            } else if is_fast_tier {
                 2
+            } else {
+                3
             }
         }
         "EU" => {
@@ -809,10 +817,12 @@ pub async fn verify_single_via_socks(
             .await
             .map_err(|e| format!("туннель: {e}"))?;
     }
-    // Reject free public nodes whose exit IP is physically inside Russia (`RU`) — they fail to
-    // unblock Instagram/Discord/ChatGPT/foreign websites and can suffer TSPU YouTube throttling!
-    if loc == "RU" && cand.source_tier != 0 {
-        return Err("выход в РФ (RU) — заблокированные сайты недоступны".into());
+    // Reject ALL nodes whose verified exit IP is physically inside Russia (`RU`) — a Russian exit
+    // defeats the entire purpose of a VPN (fails to unblock Discord/ChatGPT/Instagram/Spotify/games
+    // and suffers YouTube TSPU throttling). True RU-entry whitelist relays that exit abroad
+    // (`DE`/`US`/`NL`/`FI`/etc.) report their foreign exit country and pass cleanly!
+    if loc.eq_ignore_ascii_case("RU") {
+        return Err("выход в РФ (RU) — исключён (нужен зарубежный IP)".into());
     }
     let yt_country = yt_geo_opt.unwrap_or_else(|| {
         if matches!(loc.as_str(), "AL" | "MD" | "MC" | "AD") {
@@ -822,7 +832,7 @@ pub async fn verify_single_via_socks(
         }
     });
     // True 0%-ad YouTube server: physically hosted OUTSIDE Russia (`loc != "RU"` -> unblocks 100%
-    // of sites + full 4K speed) while YouTube GeoIP sees `AL`/`MD`/`RU`/`MC`/`AD`/`AM`/`BY`!
+    // of sites + full 4K speed) while YouTube GeoIP sees a non-monetized region!
     let yt_ad_free = !matches!(loc.as_str(), "RU" | "CF")
         && !matches!(cand.protocol.as_str(), "opera" | "http")
         && is_youtube_ad_free_country(&yt_country);
@@ -854,6 +864,8 @@ pub async fn verify_single_via_socks(
         outbound_json: cand.outbound_json.clone(),
         verified_unix: unix_now(),
         fail_count: 0,
+        ok_streak: 1,
+        last_fail_unix: 0,
     })
 }
 
@@ -916,7 +928,13 @@ pub async fn fast_verify_seed_nodes(
                             }
                             live.verified_unix = unix_now();
                             live.fail_count = 0;
-                            Ok(live)
+                            live.ok_streak = live.ok_streak.saturating_add(1).min(20);
+                            live.last_fail_unix = 0;
+                            if live.exit_country.eq_ignore_ascii_case("RU") {
+                                Err("выход в РФ (RU) — исключён".into())
+                            } else {
+                                Ok(live)
+                            }
                         }
                         (Err(e), _) => Err(format!("16КБ: {e}")),
                         (_, Err(e)) => Err(e),
@@ -1069,7 +1087,12 @@ fn build_verified_display_name(
             _ if cand.whitelist_friendly && yt_ad_free => format!("{country_ru} · WL · YT 0%"),
             _ if cand.whitelist_friendly => format!("{country_ru} · WL"),
             _ if yt_ad_free => {
-                if !yt_country.is_empty() && yt_country != loc {
+                // Never attach confusing `[RU]` tag to foreign DE/FI/NL/PL exits whose subnet
+                // happens to trigger YouTube's non-monetized mode — keep the title crisp & clear!
+                if !yt_country.is_empty()
+                    && yt_country != loc
+                    && !yt_country.eq_ignore_ascii_case("RU")
+                {
                     format!("{country_ru} · YT 0% [{yt_country}]")
                 } else {
                     format!("{country_ru} · YT 0%")
@@ -1381,13 +1404,37 @@ pub async fn revalidate_cached_nodes_via_socks(
             let t0 = Instant::now();
             let ok = match http_request_once("https://www.gstatic.com/generate_204", &opts).await {
                 Ok(r) if (200..400).contains(&r.status) => {
-                    node.rtt_ms = t0.elapsed().as_millis() as u32;
-                    node.verified_unix = unix_now();
-                    node.fail_count = 0;
-                    node.device_verified = true;
-                    true
+                    if node.exit_country.eq_ignore_ascii_case("RU") {
+                        false
+                    } else {
+                        node.rtt_ms = t0.elapsed().as_millis() as u32;
+                        node.verified_unix = unix_now();
+                        node.fail_count = 0;
+                        node.ok_streak = node.ok_streak.saturating_add(1).min(20);
+                        node.last_fail_unix = 0;
+                        node.device_verified = true;
+                        true
+                    }
                 }
-                _ => false,
+                _ => {
+                    // Anti-false-eviction second chance on alternate CDN before deleting a working node!
+                    let t1 = Instant::now();
+                    match http_request_once("https://cp.cloudflare.com/generate_204", &opts).await {
+                        Ok(r2)
+                            if (200..400).contains(&r2.status)
+                                && !node.exit_country.eq_ignore_ascii_case("RU") =>
+                        {
+                            node.rtt_ms = t1.elapsed().as_millis() as u32;
+                            node.verified_unix = unix_now();
+                            node.fail_count = 0;
+                            node.ok_streak = node.ok_streak.saturating_add(1).min(20);
+                            node.last_fail_unix = 0;
+                            node.device_verified = true;
+                            true
+                        }
+                        _ => false,
+                    }
+                }
             };
             PROBE_PROGRESS.tick_item(30, 60, 4, 1, ok, "Сверка кэша");
             (node, ok)
@@ -1484,6 +1531,28 @@ pub async fn check_active_tunnel_health(local_socks_port: u16) -> TunnelHealthRe
         _ => {}
     }
 
+    let t_cf = Instant::now();
+    let fast_opts = HttpRequestOptions {
+        method: "GET".into(),
+        timeout: Duration::from_millis(3800),
+        max_bytes: 2048,
+        fragment_tls: false,
+        socks5_proxy: Some(proxy),
+        ..Default::default()
+    };
+    if let Ok(r) = http_request_once("https://cp.cloudflare.com/generate_204", &fast_opts).await {
+        if (200..400).contains(&r.status) {
+            return TunnelHealthResult {
+                alive: true,
+                rtt_ms: t_cf.elapsed().as_millis() as u32,
+                exit_country: String::new(),
+                exit_colo: String::new(),
+                exit_ip: String::new(),
+                error: String::new(),
+            };
+        }
+    }
+
     let t1 = Instant::now();
     match http_request_once("https://1.1.1.1/cdn-cgi/trace", &opts).await {
         Ok(r) if r.status == 200 => {
@@ -1492,7 +1561,16 @@ pub async fn check_active_tunnel_health(local_socks_port: u16) -> TunnelHealthRe
             let loc = kv.get("loc").cloned().unwrap_or_default();
             let colo = kv.get("colo").cloned().unwrap_or_default();
             let ip = kv.get("ip").cloned().unwrap_or_default();
-            if is_filtered_colo(&colo) {
+            if loc.eq_ignore_ascii_case("RU") {
+                TunnelHealthResult {
+                    alive: false,
+                    rtt_ms,
+                    exit_country: loc,
+                    exit_colo: colo,
+                    exit_ip: ip,
+                    error: "выход в РФ (RU) — переключение на зарубежный сервер".into(),
+                }
+            } else if is_filtered_colo(&colo) {
                 TunnelHealthResult {
                     alive: false,
                     rtt_ms,
@@ -1604,8 +1682,10 @@ pub async fn verify_tunnel_web_and_geo(local_socks_port: u16, is_opera: bool) ->
     let ((web_ok, web_code, host, web_ms, web_err), (doh_ok, doh_code, doh_ms, loc, colo, ip, doh_err)) =
         tokio::join!(web_fut, trace_fut);
     let rtt = if doh_ms > 0 { doh_ms } else { web_ms };
+    let ru_exit = loc.eq_ignore_ascii_case("RU");
     serde_json::json!({
-        "ok": web_ok && (doh_ok || is_opera),
+        "ok": !ru_exit && web_ok && (doh_ok || is_opera),
+        "ruExit": ru_exit,
         "webCode": web_code,
         "host": host,
         "dohCode": doh_code,
@@ -1613,8 +1693,395 @@ pub async fn verify_tunnel_web_and_geo(local_socks_port: u16, is_opera: bool) ->
         "exitCountry": loc,
         "exitColo": colo,
         "exitIp": ip,
-        "webErr": web_err,
+        "webErr": if ru_exit { "выход в РФ (RU) — заменяю на зарубежный узел".into() } else { web_err },
         "dohErr": doh_err,
+    })
+}
+
+/// Real parallel 12-service availability, latency, anti-RU IP & YouTube 0%-ad checker (v1.7.0).
+/// Runs ON DEMAND only (0 MB / 0% idle background cost!) through authenticated `127.0.0.1:10808`
+/// when VPN is active, or directly over the ISP network when `local_socks_port == 0`.
+pub async fn check_services_live(local_socks_port: u16) -> serde_json::Value {
+    let proxy = if local_socks_port > 0 {
+        Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), local_socks_port))
+    } else {
+        None
+    };
+    let ua = "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
+
+    async fn probe_http_service(
+        id: &'static str,
+        name: &'static str,
+        category: &'static str,
+        primary_url: &'static str,
+        fallback_url: Option<&'static str>,
+        proxy: Option<SocketAddr>,
+        ua: &'static str,
+    ) -> (bool, serde_json::Value) {
+        let opts = HttpRequestOptions {
+            method: "GET".into(),
+            timeout: Duration::from_millis(5500),
+            max_bytes: 4096,
+            fragment_tls: false,
+            socks5_proxy: proxy,
+            headers: vec![
+                ("User-Agent".into(), ua.into()),
+                ("Accept".into(), "text/html,application/json,*/*;q=0.8".into()),
+            ],
+            ..Default::default()
+        };
+        let t0 = Instant::now();
+        // Status 200..405 (including 401/403 from login-gated APIs like Claude/OpenAI/Instagram)
+        // proves full TLS handshake + unblocked origin reachability (except explicit 451 geo-block).
+        let eval = |status: u16, body: &str| -> (bool, String) {
+            if status == 451 {
+                return (false, "Геоблок (HTTP 451)".into());
+            }
+            let low = body.to_ascii_lowercase();
+            if status == 403
+                && (low.contains("unsupported_country")
+                    || low.contains("not available in your country")
+                    || low.contains("unavailable in your region"))
+            {
+                return (false, "Ограничено для региона".into());
+            }
+            if (200..405).contains(&status) || status == 429 {
+                (true, format!("Доступен · HTTP {status}"))
+            } else {
+                (false, format!("Ошибка HTTP {status}"))
+            }
+        };
+
+        let first_err = match http_request_once(primary_url, &opts).await {
+            Ok(r) => {
+                let ms = t0.elapsed().as_millis() as u32;
+                let (ok, detail) = eval(r.status, &r.text());
+                if ok || fallback_url.is_none() {
+                    return (
+                        ok,
+                        serde_json::json!({
+                            "id": id,
+                            "name": name,
+                            "category": category,
+                            "ok": ok,
+                            "rttMs": ms,
+                            "detail": detail,
+                        }),
+                    );
+                }
+                detail
+            }
+            Err(e) => e,
+        };
+
+        if let Some(fb) = fallback_url {
+            let t1 = Instant::now();
+            if let Ok(r) = http_request_once(fb, &opts).await {
+                let ms = t1.elapsed().as_millis() as u32;
+                let (ok, detail) = eval(r.status, &r.text());
+                return (
+                    ok,
+                    serde_json::json!({
+                        "id": id,
+                        "name": name,
+                        "category": category,
+                        "ok": ok,
+                        "rttMs": ms,
+                        "detail": detail,
+                    }),
+                );
+            }
+        }
+
+        let short_err: String = first_err.chars().take(44).collect();
+        (
+            false,
+            serde_json::json!({
+                "id": id,
+                "name": name,
+                "category": category,
+                "ok": false,
+                "rttMs": 0,
+                "detail": if short_err.is_empty() { "Недоступен".into() } else { short_err },
+            }),
+        )
+    }
+
+    // 1. Exit IP & anti-RU verification
+    let geo_fut = async {
+        let opts = HttpRequestOptions {
+            method: "GET".into(),
+            timeout: Duration::from_millis(5500),
+            max_bytes: 4096,
+            fragment_tls: false,
+            socks5_proxy: proxy,
+            ..Default::default()
+        };
+        let t0 = Instant::now();
+        let resp = match http_request_once("https://1.1.1.1/cdn-cgi/trace", &opts).await {
+            Ok(r) if r.status == 200 => Ok(r),
+            _ => http_request_once("https://www.cloudflare.com/cdn-cgi/trace", &opts).await,
+        };
+        match resp {
+            Ok(r) if r.status == 200 => {
+                let ms = t0.elapsed().as_millis() as u32;
+                let kv = parse_cf_trace(&r.text());
+                let loc = kv.get("loc").cloned().unwrap_or_default();
+                let colo = kv.get("colo").cloned().unwrap_or_default();
+                let ip = kv.get("ip").cloned().unwrap_or_default();
+                let non_ru = !loc.is_empty() && !loc.eq_ignore_ascii_case("RU");
+                let detail = if non_ru {
+                    format!("{ip} · {loc}/{colo} (IP подменён)")
+                } else if loc.eq_ignore_ascii_case("RU") {
+                    format!("{ip} · РФ (включите зарубежный VPN)")
+                } else {
+                    format!("{ip} · {colo}")
+                };
+                (
+                    non_ru,
+                    ip,
+                    loc,
+                    colo,
+                    serde_json::json!({
+                        "id": "geo",
+                        "name": "Зарубежный IP (не РФ)",
+                        "category": "Защита",
+                        "ok": non_ru,
+                        "rttMs": ms,
+                        "detail": detail,
+                    }),
+                )
+            }
+            _ => (
+                false,
+                String::new(),
+                String::new(),
+                String::new(),
+                serde_json::json!({
+                    "id": "geo",
+                    "name": "Зарубежный IP (не РФ)",
+                    "category": "Защита",
+                    "ok": false,
+                    "rttMs": 0,
+                    "detail": "Таймаут проверки IP",
+                }),
+            ),
+        }
+    };
+
+    // 2. Encrypted DoH DNS verification
+    let doh_fut = async {
+        let opts = HttpRequestOptions {
+            method: "GET".into(),
+            timeout: Duration::from_millis(5000),
+            max_bytes: 4096,
+            fragment_tls: false,
+            socks5_proxy: proxy,
+            headers: vec![("Accept".into(), "application/dns-json".into())],
+            ..Default::default()
+        };
+        let t0 = Instant::now();
+        match http_request_once(
+            "https://cloudflare-dns.com/dns-query?name=discord.com&type=A",
+            &opts,
+        )
+        .await
+        {
+            Ok(r) if r.status == 200 && r.text().contains("\"Answer\"") => {
+                let ms = t0.elapsed().as_millis() as u32;
+                (
+                    true,
+                    serde_json::json!({
+                        "id": "doh",
+                        "name": "Шифрованный DNS (DoH)",
+                        "category": "Защита",
+                        "ok": true,
+                        "rttMs": ms,
+                        "detail": "Без подмены и утечек (TLS)",
+                    }),
+                )
+            }
+            _ => (
+                false,
+                serde_json::json!({
+                    "id": "doh",
+                    "name": "Шифрованный DNS (DoH)",
+                    "category": "Защита",
+                    "ok": false,
+                    "rttMs": 0,
+                    "detail": "DoH заблокирован или недоступен",
+                }),
+            ),
+        }
+    };
+
+    // 3. YouTube + 0% Ads real check
+    let yt_fut = async {
+        let t0 = Instant::now();
+        let (gl_opt, img_res) = tokio::join!(
+            async {
+                if let Some(p) = proxy {
+                    detect_youtube_geo_via_socks(p, 5200).await
+                } else {
+                    None
+                }
+            },
+            probe_http_service(
+                "youtube",
+                "YouTube и Shorts",
+                "Видео",
+                "https://i.ytimg.com/generate_204",
+                Some("https://www.youtube.com/generate_204"),
+                proxy,
+                ua,
+            )
+        );
+        let ms = t0.elapsed().as_millis() as u32;
+        if let Some(gl) = gl_opt {
+            let ad_free = is_youtube_ad_free_country(&gl);
+            let detail = if ad_free {
+                "Доступен · 0% рекламы активно!"
+            } else {
+                "Доступен · без замедления (HD/4K)"
+            };
+            (
+                true,
+                ad_free,
+                serde_json::json!({
+                    "id": "youtube",
+                    "name": "YouTube, Shorts и Music",
+                    "category": "Видео",
+                    "ok": true,
+                    "rttMs": ms,
+                    "detail": detail,
+                }),
+            )
+        } else {
+            (img_res.0, false, img_res.1)
+        }
+    };
+
+    let started = Instant::now();
+    // Run in 2 gentle waves of 6 so we stay fast (~2–4s total) with minimal peak memory!
+    let (geo_r, doh_r, yt_r, discord_r, chatgpt_r, ai_r) = tokio::join!(
+        geo_fut,
+        doh_fut,
+        yt_fut,
+        probe_http_service(
+            "discord",
+            "Discord (чат и голос)",
+            "Общение",
+            "https://discord.com/api/v10/gateway",
+            Some("https://discordapp.com/api/v10/gateway"),
+            proxy,
+            ua,
+        ),
+        probe_http_service(
+            "chatgpt",
+            "ChatGPT / OpenAI / Sora",
+            "ИИ",
+            "https://chatgpt.com/",
+            Some("https://api.openai.com/v1/models"),
+            proxy,
+            ua,
+        ),
+        probe_http_service(
+            "ai",
+            "Gemini / Claude / Grok",
+            "ИИ",
+            "https://gemini.google.com/",
+            Some("https://claude.ai/login"),
+            proxy,
+            ua,
+        ),
+    );
+
+    let (insta_r, spotify_r, twitch_r, games_r, work_r, tg_r) = tokio::join!(
+        probe_http_service(
+            "instagram",
+            "Instagram / Threads / X",
+            "Соцсети",
+            "https://www.instagram.com/",
+            Some("https://x.com/"),
+            proxy,
+            ua,
+        ),
+        probe_http_service(
+            "spotify",
+            "Spotify / SoundCloud",
+            "Музыка",
+            "https://open.spotify.com/",
+            Some("https://soundcloud.com/"),
+            proxy,
+            ua,
+        ),
+        probe_http_service(
+            "twitch",
+            "Twitch / Netflix",
+            "Стриминг",
+            "https://www.twitch.tv/",
+            Some("https://www.netflix.com/"),
+            proxy,
+            ua,
+        ),
+        probe_http_service(
+            "games",
+            "Steam / Roblox / Brawl Stars",
+            "Игры",
+            "https://store.steampowered.com/",
+            Some("https://www.roblox.com/"),
+            proxy,
+            ua,
+        ),
+        probe_http_service(
+            "work",
+            "GitHub / Notion / Figma / Canva",
+            "Работа",
+            "https://api.github.com/zen",
+            Some("https://www.figma.com/"),
+            proxy,
+            ua,
+        ),
+        probe_http_service(
+            "telegram",
+            "Telegram (Медиа и звонки)",
+            "Общение",
+            "https://core.telegram.org/",
+            Some("https://telegram.org/"),
+            proxy,
+            ua,
+        ),
+    );
+
+    let items = vec![
+        (geo_r.0, geo_r.4),
+        doh_r,
+        (yt_r.0, yt_r.2),
+        discord_r,
+        chatgpt_r,
+        ai_r,
+        insta_r,
+        spotify_r,
+        twitch_r,
+        games_r,
+        work_r,
+        tg_r,
+    ];
+    let passed = items.iter().filter(|(ok, _)| *ok).count();
+    let total = items.len();
+    let arr: Vec<serde_json::Value> = items.into_iter().map(|(_, v)| v).collect();
+
+    serde_json::json!({
+        "ok": true,
+        "viaVpn": local_socks_port > 0,
+        "passed": passed,
+        "total": total,
+        "elapsedMs": started.elapsed().as_millis() as u32,
+        "exitIp": geo_r.1,
+        "exitCountry": geo_r.2,
+        "exitColo": geo_r.3,
+        "ytAdFree": yt_r.1,
+        "services": arr,
     })
 }
 

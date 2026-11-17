@@ -96,6 +96,9 @@ object VeloxPrefs {
                 profileMode = RuntimeProfileMode.from(o.optString("profileMode", "mobile")),
                 tgMaxRttMs = o.optInt("tgMaxRttMs", 1400).coerceIn(300, 1400),
                 excludedPackages = o.optJSONArray("excludedPackages").mapStrings().toSet(),
+                rulesVpn = o.optString("rulesVpn", ""),
+                rulesDirect = o.optString("rulesDirect", ""),
+                rulesBlock = o.optString("rulesBlock", ""),
             )
         }.getOrDefault(AppSettings())
     }
@@ -114,6 +117,9 @@ object VeloxPrefs {
             put("autoHeal", s.autoHeal)
             put("profileMode", s.profileMode.code)
             put("tgMaxRttMs", s.tgMaxRttMs.coerceIn(300, 1400))
+            put("rulesVpn", s.rulesVpn)
+            put("rulesDirect", s.rulesDirect)
+            put("rulesBlock", s.rulesBlock)
             val arr = JSONArray()
             s.excludedPackages.forEach { arr.put(it) }
             put("excludedPackages", arr)
@@ -138,6 +144,9 @@ object VeloxPrefs {
                 put("autoHeal", updated.autoHeal)
                 put("profileMode", updated.profileMode.code)
                 put("tgMaxRttMs", updated.tgMaxRttMs.coerceIn(300, 1400))
+                put("rulesVpn", updated.rulesVpn)
+                put("rulesDirect", updated.rulesDirect)
+                put("rulesBlock", updated.rulesBlock)
                 val arr = JSONArray()
                 updated.excludedPackages.forEach { arr.put(it) }
                 put("excludedPackages", arr)

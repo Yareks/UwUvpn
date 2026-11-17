@@ -864,6 +864,8 @@ mod tests {
                 source_tier: 1,
                 verified_unix: now,
                 fail_count: 0,
+                ok_streak: 2,
+                last_fail_unix: 0,
                 raw_uri: c.raw_uri,
                 outbound_json: c.outbound_json,
             }
@@ -974,6 +976,243 @@ mod tests {
         assert!(!s1.contains("SuperSecretToken123"), "leaked sub token: {s1}");
         assert!(s1.contains("admin.example.site"), "should keep host: {s1}");
         assert!(!s2.contains("ABCDEF1234567890"), "leaked crypt5: {s2}");
+    }
+
+    #[test]
+    fn test_v17_zero_ru_and_standby_priority_same_country_then_de_us() {
+        use crate::sources::is_pure_russia_exit_remark;
+        use crate::store::{filter_nodes_for_region, normalize_region};
+        use crate::xray_config::{
+            build_production_tun_config_v17, parse_share_uri_to_candidate, CustomDomainRules,
+        };
+
+        assert_eq!(normalize_region("RU"), "DE");
+        assert_eq!(normalize_region("PT"), "PT");
+        assert_eq!(normalize_region("HU"), "HU");
+        assert!(is_pure_russia_exit_remark("🇷🇺 Россия #1"));
+        assert!(is_pure_russia_exit_remark("Moscow VDS"));
+        assert!(!is_pure_russia_exit_remark("🇷🇺 WL -> 🇩🇪 Germany"));
+        assert!(!is_pure_russia_exit_remark("🇩🇪 Frankfurt Reality"));
+        assert!(!is_pure_russia_exit_remark("🇺🇸 USA New York"));
+
+        let mk = |ip: &str, cc: &str, name: &str, rtt: u32, yt_free: bool| {
+            let uri = format!(
+                "vless://11111111-1111-1111-1111-111111111111@{ip}:443?security=reality&sni=www.microsoft.com&pbk=m0R_t5s8x2A1b3C4d5E6f7G8h9I0j1K2l3M4n5O6p7Q&fp=chrome#{name}"
+            );
+            let c = parse_share_uri_to_candidate(&uri, cc, 1, false).unwrap();
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            crate::sources::VerifiedVpnNode {
+                id: c.id,
+                name: name.into(),
+                display_protocol: "VLESS Reality".into(),
+                protocol: c.protocol,
+                host: c.host,
+                port: c.port,
+                sni: c.sni,
+                exit_country: cc.into(),
+                exit_colo: "FRA".into(),
+                exit_ip: ip.into(),
+                rtt_ms: rtt,
+                kbps: 4500,
+                passed_32kb: true,
+                whitelist_friendly: false,
+                fragment_enabled: false,
+                via_warp: false,
+                device_verified: true,
+                yt_ad_free: yt_free,
+                yt_country: if yt_free { "RU".into() } else { cc.into() },
+                source_tier: 1,
+                verified_unix: now,
+                fail_count: 0,
+                ok_streak: 3,
+                last_fail_unix: 0,
+                raw_uri: c.raw_uri,
+                outbound_json: c.outbound_json,
+            }
+        };
+
+        let ru_bad = mk("185.10.10.1", "RU", "RU-MustDrop", 10, true);
+        let nl_pri = mk("185.20.20.1", "NL", "NL-Primary", 45, false);
+        let nl_same_subnet = mk("185.20.20.99", "NL", "NL-Same24", 46, false);
+        let nl_distinct = mk("94.142.241.10", "NL", "NL-Distinct", 130, false);
+        let se_fast = mk("193.138.218.5", "SE", "SE-UltraFast", 22, false);
+        let de_res = mk("88.198.10.20", "DE", "DE-Reserve", 95, false);
+        let us_res = mk("64.225.80.30", "US", "US-Reserve", 155, false);
+
+        // Zero-RU check: filter & planner must completely eliminate RU nodes (including yt_pool!)
+        let filtered = filter_nodes_for_region(
+            &[
+                ru_bad.clone(),
+                nl_pri.clone(),
+                nl_same_subnet.clone(),
+                nl_distinct.clone(),
+                se_fast.clone(),
+                de_res.clone(),
+                us_res.clone(),
+            ],
+            "AUTO",
+            false,
+        );
+        assert!(
+            filtered.iter().all(|n| n.exit_country != "RU"),
+            "RU node leaked into filtered pool!"
+        );
+        // AUTO mode boosts DE/US ahead of non-DE/US nodes!
+        assert!(
+            matches!(filtered[0].exit_country.as_str(), "DE" | "US"),
+            "DE/US should rank #1 in AUTO mode, got {}",
+            filtered[0].exit_country
+        );
+
+        // Case A: Pinned NL primary with distinct NL + same-/24 NL + faster SE + DE + US
+        // -> #1 standby MUST be `nl_distinct` (same_country AND distinct /24 subnet)!
+        let pool_a = vec![
+            ru_bad.clone(),
+            nl_pri.clone(),
+            nl_same_subnet.clone(),
+            nl_distinct.clone(),
+            se_fast.clone(),
+            de_res.clone(),
+            us_res.clone(),
+        ];
+        let plan_a = build_production_tun_config_v17(
+            &pool_a,
+            Some(&nl_pri.id),
+            "AUTO",
+            false,
+            true,
+            true,
+            true,
+            true,
+            false,
+            10808,
+            Some(("u", "p")),
+            None,
+            None,
+        )
+        .expect("plan A");
+        assert_eq!(plan_a.primary.id, nl_pri.id);
+        let sb_a = plan_a.standby.expect("standby A");
+        assert_eq!(
+            sb_a.id, nl_distinct.id,
+            "Expected distinct same-country NL standby, got {} ({})",
+            sb_a.name, sb_a.exit_country
+        );
+        assert_eq!(plan_a.standby_tier, "same_country");
+        assert!(!plan_a.config_json.contains("185.10.10.1"), "RU IP leaked into Xray JSON!");
+
+        // Case B: Pinned NL primary with NO second NL, plus fast SE (22ms) + DE (95ms) + US (155ms)
+        // -> #2 standby priority MUST pick DE (priority country DE/US) over 22ms SE!
+        let pool_b = vec![ru_bad.clone(), nl_pri.clone(), se_fast.clone(), de_res.clone(), us_res.clone()];
+        let plan_b = build_production_tun_config_v17(
+            &pool_b,
+            Some(&nl_pri.id),
+            "AUTO",
+            false,
+            true,
+            true,
+            true,
+            true,
+            false,
+            10808,
+            Some(("u", "p")),
+            None,
+            None,
+        )
+        .expect("plan B");
+        let sb_b = plan_b.standby.expect("standby B");
+        assert_eq!(sb_b.id, de_res.id);
+        assert_eq!(plan_b.standby_tier, "de_us");
+
+        // Case C: Pinned NL primary with NO NL, NO DE, plus fast SE (22ms) + US (155ms)
+        // -> #2 standby priority MUST pick US over 22ms SE!
+        let pool_c = vec![nl_pri.clone(), se_fast.clone(), us_res.clone()];
+        let plan_c = build_production_tun_config_v17(
+            &pool_c,
+            Some(&nl_pri.id),
+            "AUTO",
+            false,
+            true,
+            true,
+            true,
+            true,
+            false,
+            10808,
+            Some(("u", "p")),
+            None,
+            None,
+        )
+        .expect("plan C");
+        assert_eq!(plan_c.standby.unwrap().id, us_res.id);
+        assert_eq!(plan_c.standby_tier, "de_us");
+
+        // Case D: Pinned DE primary with DE-2 + US -> picks DE-2 (`same_country`) before US!
+        let de_2 = mk("116.203.50.60", "DE", "DE-Second", 110, false);
+        let plan_d = build_production_tun_config_v17(
+            &[de_res.clone(), us_res.clone(), de_2.clone(), se_fast.clone()],
+            Some(&de_res.id),
+            "AUTO",
+            false,
+            true,
+            true,
+            true,
+            true,
+            false,
+            10808,
+            Some(("u", "p")),
+            None,
+            None,
+        )
+        .expect("plan D");
+        assert_eq!(plan_d.standby.unwrap().id, de_2.id);
+        assert_eq!(plan_d.standby_tier, "same_country");
+
+        // Case E: Custom domain rules + TCP anti-drop keepalives + DNS <= 8 invariant
+        let rules = CustomDomainRules::from_json_str(
+            r#"{"vpn":["https://MyService.Example.com/api","*.ai-lab.org"],"direct":["mybank.local.ru","localhost"],"block":["full:tracker.bad.example"]}"#,
+        );
+        assert_eq!(rules.vpn.len(), 2);
+        assert_eq!(rules.direct.len(), 1); // localhost rejected safely
+        assert_eq!(rules.block.len(), 1);
+        let plan_e = build_production_tun_config_v17(
+            &[de_res.clone(), us_res.clone()],
+            None,
+            "AUTO",
+            false,
+            true,
+            true,
+            true,
+            true,
+            false,
+            10808,
+            Some(("u", "p")),
+            None,
+            Some(&rules),
+        )
+        .expect("plan E");
+        let cfg: serde_json::Value = serde_json::from_str(&plan_e.config_json).unwrap();
+        let dns_servers = cfg["dns"]["servers"].as_array().unwrap();
+        assert!(dns_servers.len() <= 8, "dns.servers exceeded 8: {}", dns_servers.len());
+        let vpn0 = cfg["outbounds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["tag"] == "vpn_0")
+            .unwrap();
+        assert_eq!(vpn0["streamSettings"]["sockopt"]["tcpKeepAliveIdle"], 28);
+        assert_eq!(vpn0["streamSettings"]["sockopt"]["tcpKeepAliveInterval"], 15);
+        assert_eq!(vpn0["streamSettings"]["sockopt"]["tcpUserTimeout"], 15000);
+        let rstr = serde_json::to_string(&cfg["routing"]["rules"]).unwrap();
+        assert!(rstr.contains("domain:myservice.example.com"));
+        assert!(rstr.contains("domain:ai-lab.org"));
+        assert!(rstr.contains("domain:mybank.local.ru"));
+        assert!(rstr.contains("full:tracker.bad.example"));
+        assert!(rstr.contains("domain:cursor.com"));
+        assert!(rstr.contains("domain:claude.ai"));
+        assert!(rstr.contains("domain:rutracker.org"));
     }
 }
 

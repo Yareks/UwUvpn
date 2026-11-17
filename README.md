@@ -17,7 +17,8 @@
 
 ## Возможности
 
-- **100% Rust сетевой стек (`xray-rust` 0.10.0 + `velox-engine` 1.6.0)** — нативный туннель с потреблением ~4–8 МБ ОЗУ в простое, отдельным процессом `:vpn` (1-поточный рантайм, энергосбережение при выключенном экране и в авиарежиме, `90s`/`180s` radio-tail friendly observatory), чистым `IPv4 TUN` без утечек IPv6, `FakeIP DNS (198.19.0.0/16)`, аутентификацией RFC 1929 на локальном SOCKS5 (`127.0.0.1:10808`), прозрачной маршрутизацией браузерных `DoH/DoT` (Chrome, Яндекс Браузер, Opera, Brave, Firefox, AdGuard, WebView) и Discord, профилями `LowMemory` / `Mobile` / `MobilePlus` и выравниванием ELF-сегментов `16 КБ` (`arm64-v8a` и `armeabi-v7a`, Android 7.0–16, включая Android 12).
+- **v1.7.0: анти-разрыв + приоритетный резерв + 0% серверов РФ** — горячий резерв `#2` теперь сначала берётся **из той же страны**, что и активный сервер `#1` (никакого прыжка страны при сбое), затем **Германия (DE) / США (US)**; серверы с выходом в РФ полностью исключены; TCP `tcpKeepAlive 28с` + RFC 5482 `tcpUserTimeout 15с` + heartbeat для WS/gRPC/XHTTP против CGNAT-обрывов; вкладка **«Сервисы»** с одиночной проверкой 12 групп сервисов (ИИ, Discord, соцсети, видео, игры, работа) и **свои правила сайтов** (через VPN / напрямую / блок).
+- **100% Rust сетевой стек (`xray-rust` 0.10.0 + `velox-engine` 1.7.0)** — нативный туннель с потреблением ~4–8 МБ ОЗУ в простое, отдельным процессом `:vpn` (1-поточный рантайм, энергосбережение при выключенном экране и в авиарежиме, `90s`/`180s` radio-tail friendly observatory), чистым `IPv4 TUN` без утечек IPv6, `FakeIP DNS (198.19.0.0/16)`, аутентификацией RFC 1929 на локальном SOCKS5 (`127.0.0.1:10808`), прозрачной маршрутизацией браузерных `DoH/DoT` (Chrome, Яндекс Браузер, Opera, Brave, Firefox, AdGuard, WebView) и Discord, профилями `LowMemory` / `Mobile` / `MobilePlus` и выравниванием ELF-сегментов `16 КБ` (`arm64-v8a` и `armeabi-v7a`, Android 7.0–16, включая Android 12).
 - **Двухканальный режим `2×` (Primary + горячий резерв Hot-Standby без обрыва `tun0`):**
   - Одновременно держит основной канал `vpn_0` (100% трафика, без «прыжков» IP) и заранее проверенный резерв `vpn_1` с мгновенным переключением в ядре (`fallbackTag`), пассивным детектором зависания (3 с), автопродвижением `#2 → #1` и автопополнением нового `#2` в фоне.
   - Строгая изоляция по стране: в режиме `Авто` выбирает лучший основной + лучший резерв на другом хосте, а при выборе конкретной страны (например, `🇩🇪 Германия`) основной, резервный и все автопереключения строго ограничены этой страной.
@@ -28,7 +29,7 @@
 - **YouTube и сайты без рекламы (0 МБ доп. ОЗУ, со скоростным фильтром):**
   - Автоматическое определение быстрых серверов с 0% монетизации YouTube (`youtube.com/sw.js_data`: Албания, Молдова и европейские VPS с YouTube GeoIP `RU`) и сплит-маршрутизация `yt_pool` со скоростным порогом и мгновенным фоллбэком на `vpn_0` (без буферизации 1080p60/4K).
   - Встроенный доменный антибаннер (`NXDOMAIN` + фильтрация в туннеле: DoubleClick, Google Ads/IMA, Яндекс.Директ/AdFox, myTarget, popunder-сети) без поломки сайтов и видеопотоков.
-- **16+ стран и многоэшелонный бесплатный пул без аккаунтов (76 автообновляемых источников, до 120 проверенных подключений в пуле):**
+- **16+ стран и многоэшелонный бесплатный пул без аккаунтов (96 автообновляемых источников: 79 VPN + 17 Telegram, до 120 проверенных подключений в пуле):**
   - **Страны и режимы в 1 тап:** Авто, YouTube без рекламы (0%), Белые списки РФ, Финляндия, Нидерланды, Германия, США, Великобритания, Франция, Швеция, Польша, Швейцария, Турция, Япония, Сингапур, Канада и Cloudflare WARP / MASQUE + фильтрация по протоколам и сортировка по пингу/скорости/стране.
   - **Эшелон 1 — Прямые анти-DPI протоколы:** `VLESS + REALITY` (`Vision`, `XHTTP`, `gRPC`, `WS`, `HTTPUpgrade` с uTLS `chrome`, `firefox`, `safari`, `ios`, `edge`, `qq`), `Hysteria 2` (QUIC + Salamander + port hopping), `Trojan`, `VMess AEAD`, `Shadowsocks 2022` / `SS AEAD`, `WireGuard` (+ AmneziaWG Noise), `SOCKS5` (+ TLS) и `HTTPS CONNECT` + фрагментация TLS ClientHello (`finalmask.tcp`).
   - **Эшелон 2 — Двуххоповый `MASQUE-Chain` (США / ЕС / Азия):** автоматическая маршрутизация зарубежных узлов (`SS2022`, `Trojan`, `VLESS`, `VMess`, `Opera US/NL/SG`) поверх HTTP/3 QUIC и HTTP/2 TCP туннеля Cloudflare WARP MASQUE.
@@ -52,7 +53,7 @@
 
 ```text
 UwUvpn/
-├── rust-engine/                 # Нативный движок velox-engine v1.6.0 (100% Rust, fat LTO, JNI cdylib)
+├── rust-engine/                 # Нативный движок velox-engine v1.7.0 (100% Rust, fat LTO, JNI cdylib)
 │   ├── src/
 │   │   ├── happ_compat.rs       # Офлайн-дешифратор happ://crypt..crypt5, incy://crypt1/, AES-GCM, HWID, deep-link
 │   │   ├── net_util.rs          # Анти-спуфинг DoH + TTL-кэш, ETag/304, gzip/deflate, SSRF-guard, SOCKS5 auth
@@ -86,7 +87,7 @@ UwUvpn/
 
 ## Установка готового APK
 
-1. Скачайте последний `VeloxVPN-v1.6.0.apk` в разделе [**Releases**](https://github.com/Yareks/UwUvpn/releases/latest).
+1. Скачайте последний `VeloxVPN-v1.7.0.apk` в разделе [**Releases**](https://github.com/Yareks/UwUvpn/releases/latest).
 2. Установите APK на Android 7.0–16 (`arm64-v8a` или `armeabi-v7a`, полностью совместим с обновлением поверх v1.3.0–v1.5.0).
 3. Откройте приложение — рабочие серверы и прокси Telegram подгрузятся автоматически; выберите регион (`🇺🇸 США`, `🇩🇪 Германия`, `⚡ Авто` и др.), режим **`2×` (Основной + резерв)**, включите при необходимости **«Белые списки РФ»** или добавьте свою подписку (`https://`, `happ://crypt*`, `incy://crypt1/`, `v2raytun://` и др.) через кнопку **`+`**.
 
@@ -122,7 +123,7 @@ chmod +x scripts/build-android.sh
 
 ## English Summary
 
-**UwUvpn (VeloxVPN v1.6.0)** is an ultra-lightweight, zero-registration, zero-telemetry Android VPN and Telegram proxy client built on a 100% Rust networking stack ([`xray-rust`](https://github.com/aimalygin/xray-rust) v0.10.0 + `velox-engine` v1.6.0) with a native Jetpack Compose Material 3 UI.
+**UwUvpn (VeloxVPN v1.7.0)** is an ultra-lightweight, zero-registration, zero-telemetry Android VPN and Telegram proxy client built on a 100% Rust networking stack ([`xray-rust`](https://github.com/aimalygin/xray-rust) v0.10.0 + `velox-engine` v1.7.0) with a native Jetpack Compose Material 3 UI.
 
 - **Dual-Channel `2×` Hot-Standby & Strict Country Lock:** Keeps a verified standby channel (`vpn_1`) ready behind `vpn_0` for zero-drop failover without tearing down `tun0`, promotes/replenishes automatically, and strictly locks primary, standby, and retries to the selected country.
 - **Full Offline Happ 4.11+ / Incy Subscription Support:** Decrypts `happ://crypt`..`crypt5`, `incy://crypt1/`, and AES-128-GCM subscription bodies on-device, handles 19 deep-link schemes, supports optional `X-HWID` + wire-order device headers, traffic/expiry/announce/support metadata, and raw Xray JSON imports.

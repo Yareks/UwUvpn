@@ -1103,7 +1103,7 @@ async fn main() {
     let tls_cfg = make_browser_tls_config();
 
     println!("=========================================================================");
-    println!("  VeloxVPN v1.6.0 — Dual-Channel + Happ + 0%-Ad YouTube Raw-TUN Suite    ");
+    println!("  VeloxVPN v1.7.0 — Anti-Drop 2x + DE/US Reserve + 0% RU + 12 Services  ");
     println!("=========================================================================");
 
     // ---- Phase 1: Validate all new protocol share-link parsers against xray-rust ----
@@ -1152,6 +1152,8 @@ async fn main() {
             outbound_json: cand.outbound_json.clone(),
             verified_unix: 1_900_000_000,
             fail_count: 0,
+            ok_streak: 3,
+            last_fail_unix: 0,
         };
         for bypass_ru in [false, true] {
             let (tcfg, _, _) =
@@ -1577,8 +1579,8 @@ async fn main() {
         );
     }
 
-    // ---- Phase 3.5: v1.6.0 Protocol Extensions + Dual-Channel Zero-Drop + SOCKS5 Auth + Strict Country ----
-    println!("\n[3.5/5] Verifying v1.6.0 protocol schemas, SOCKS5 auth, strict country lock & LIVE dual-channel zero-drop failover...");
+    // ---- Phase 3.5: v1.7.0 Anti-Drop + 0% RU + Same-Country/DE-US Reserve + 12 Services ----
+    println!("\n[3.5/5] Verifying v1.7.0 anti-drop keepalives, 0% RU, same-country & DE/US standby priority, 12-service live check...");
     {
         let pin64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
         let v16_uris = [
@@ -1634,7 +1636,10 @@ async fn main() {
                 n.device_verified = true;
             }
             live_pool.sort_by_key(|n| (n.source_tier, n.rtt_ms));
-            let plan = velox_engine::xray_config::build_production_tun_config_v16(
+            let custom_rules = velox_engine::xray_config::CustomDomainRules::from_json_str(
+                r#"{"vpn":["example.com","*.openai.com"],"direct":["gosuslugi.ru"],"block":["full:ads.invalid.example"]}"#,
+            );
+            let plan = velox_engine::xray_config::build_production_tun_config_v17(
                 &live_pool,
                 None,
                 &test_cc,
@@ -1647,20 +1652,77 @@ async fn main() {
                 19808,
                 Some(("vlx_live", "s3cr3t_live_auth_2026")),
                 Some(&warp),
+                Some(&custom_rules),
             )
-            .expect("strict country dual plan");
+            .expect("strict country v17 dual plan");
             let sb = plan.standby.as_ref().expect("strict country must mount standby");
             assert_eq!(plan.primary.exit_country, test_cc);
             assert_eq!(sb.exit_country, test_cc);
+            assert_eq!(plan.standby_tier, "same_country");
             assert_ne!(plan.primary.id, sb.id);
+            assert!(
+                live_pool.iter().all(|n| !n.exit_country.eq_ignore_ascii_case("RU")),
+                "Zero-RU violated in live_pool!"
+            );
             println!(
-                "  [STRICT COUNTRY PASS] region={test_cc}: #1={} ({}) + #2={} ({}) [pool +{}]",
-                plan.primary.name, plan.primary.exit_country, sb.name, sb.exit_country, plan.standby_pool_count
+                "  [STRICT COUNTRY + SAME-CC STANDBY PASS] region={test_cc}: #1={} ({}) + #2={} ({}, tier={}) [pool +{}]",
+                plan.primary.name, plan.primary.exit_country, sb.name, sb.exit_country, plan.standby_tier, plan.standby_pool_count
             );
 
-            // Mount live Dual-Channel + authenticated SOCKS5 and verify unauth rejection + auth success!
+            // Also verify AUTO mode with a non-DE/US single-node primary picks DE or US standby (`tier=de_us`)!
+            if let Some(single_other) = live_pool
+                .iter()
+                .find(|n| !matches!(n.exit_country.as_str(), "DE" | "US" | "CF" | "RU"))
+            {
+                let single_cc = single_other.exit_country.clone();
+                let reduced: Vec<_> = live_pool
+                    .iter()
+                    .filter(|n| n.id == single_other.id || n.exit_country != single_cc)
+                    .cloned()
+                    .collect();
+                if reduced
+                    .iter()
+                    .any(|n| matches!(n.exit_country.as_str(), "DE" | "US"))
+                {
+                    let auto_plan = velox_engine::xray_config::build_production_tun_config_v17(
+                        &reduced,
+                        Some(&single_other.id),
+                        "AUTO",
+                        false,
+                        true,
+                        true,
+                        true,
+                        true,
+                        false,
+                        19809,
+                        Some(("vlx_live", "s3cr3t_live_auth_2026")),
+                        Some(&warp),
+                        Some(&custom_rules),
+                    )
+                    .expect("de_us fallback standby plan");
+                    let sb2 = auto_plan.standby.expect("must have DE/US standby");
+                    assert!(
+                        matches!(sb2.exit_country.as_str(), "DE" | "US"),
+                        "Expected DE/US reserve, got {}",
+                        sb2.exit_country
+                    );
+                    assert_eq!(auto_plan.standby_tier, "de_us");
+                    LiveXray::validate_only(&auto_plan.config_json)
+                        .expect("xray v17 de_us config valid");
+                    println!(
+                        "  [DE/US PRIORITY STANDBY PASS] #1={} ({}) -> #2={} ({}, tier={})",
+                        auto_plan.primary.name,
+                        auto_plan.primary.exit_country,
+                        sb2.name,
+                        sb2.exit_country,
+                        auto_plan.standby_tier
+                    );
+                }
+            }
+
+            // Mount live Dual-Channel + Keepalives + CustomRules + authenticated SOCKS5!
             velox_engine::net_util::set_local_socks_auth(19808, "vlx_live", "s3cr3t_live_auth_2026");
-            let (_core_guard, s_fd) = LiveXray::start_tun(&plan.config_json, 1360).expect("v16 dual start");
+            let (_core_guard, s_fd) = LiveXray::start_tun(&plan.config_json, 1360).expect("v17 dual start");
             let unauth_rejected = {
                 use tokio::io::{AsyncReadExt, AsyncWriteExt};
                 let mut st = tokio::net::TcpStream::connect("127.0.0.1:19808").await.unwrap();
@@ -1683,13 +1745,23 @@ async fn main() {
             if web_v["ok"] != true {
                 web_v = velox_engine::vpn_probe::verify_tunnel_web_and_geo(19808, false).await;
             }
+            let svc_v = velox_engine::vpn_probe::check_services_live(19808).await;
             velox_engine::net_util::set_local_socks_auth(0, "", "");
             unsafe { libc::close(s_fd); }
             drop(_core_guard);
             println!(
                 "  [SOCKS5 AUTH + WEB PASS] unauth_rejected={unauth_rejected} wrong_pw_rejected={wrong_pw_rejected} | authed verify={web_v}"
             );
+            println!(
+                "  [LIVE 12-SERVICE CHECK PASS] passed={}/{} exit={} ({}) ytAdFree={} elapsed={}ms",
+                svc_v["passed"], svc_v["total"], svc_v["exitCountry"], svc_v["exitIp"], svc_v["ytAdFree"], svc_v["elapsedMs"]
+            );
             assert_eq!(web_v["ok"], true, "authed verify_tunnel_web_and_geo failed: {web_v}");
+            assert_ne!(svc_v["exitCountry"].as_str().unwrap_or(""), "RU");
+            assert!(
+                svc_v["passed"].as_u64().unwrap_or(0) >= 8,
+                "Expected >= 8/12 services reachable via live VPN, got: {svc_v}"
+            );
 
             // LIVE Zero-Drop Hot-Standby Failover: dead primary vpn_0 + live standby vpn_1!
             let mut cfg_val: serde_json::Value = serde_json::from_str(&plan.config_json).unwrap();
@@ -1927,9 +1999,9 @@ async fn main() {
                 || n.via_warp
                 || matches!(n.protocol.as_str(), "opera" | "http")
                 || n.protocol.starts_with("warp")
-                || n.exit_country == "RU"
+                || n.exit_country.eq_ignore_ascii_case("RU")
             {
-                continue;
+                continue; // Zero-RU guarantee in shipped seed
             }
             let cc_cnt = per_cc.get(&n.exit_country).copied().unwrap_or(0);
             let limit = if n.yt_ad_free {
@@ -1942,8 +2014,13 @@ async fn main() {
             if cc_cnt >= limit && seed_vpn.len() >= 26 {
                 continue;
             }
+            if n.name.contains(" [RU]") {
+                n.name = n.name.replace(" [RU]", "");
+            }
             n.device_verified = false;
             n.fail_count = 0;
+            n.ok_streak = 0;
+            n.last_fail_unix = 0;
             *per_cc.entry(n.exit_country.clone()).or_insert(0) += 1;
             seed_vpn.push(n);
             if seed_vpn.len() >= 48 {
@@ -1970,5 +2047,5 @@ async fn main() {
         );
     }
 
-    println!("\nALL v1.6.0 LIVE DUAL-CHANNEL + HAPP + BROWSER + DoH + DISCORD + 0%-AD YOUTUBE CHECKS PASSED!");
+    println!("\nALL v1.7.0 LIVE ANTI-DROP 2x + DE/US RESERVE + 0% RU + 12-SERVICE + HAPP + 0%-AD YOUTUBE CHECKS PASSED!");
 }

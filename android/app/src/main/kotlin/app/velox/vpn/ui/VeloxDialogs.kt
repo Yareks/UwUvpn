@@ -691,6 +691,17 @@ internal fun NavVectorIcon(kind: Int, active: Boolean) {
                 }
                 drawPath(p, color = c, style = Stroke(width = sw, cap = StrokeCap.Round))
             }
+            3 -> {
+                // Globe glyph (services reachability)
+                drawCircle(c, radius = w * 0.34f, center = Offset(w * 0.5f, h * 0.5f), style = Stroke(width = sw))
+                drawLine(c, Offset(w * 0.16f, h * 0.5f), Offset(w * 0.84f, h * 0.5f), sw, StrokeCap.Round)
+                drawOval(
+                    color = c,
+                    topLeft = Offset(w * 0.32f, h * 0.16f),
+                    size = Size(w * 0.36f, h * 0.68f),
+                    style = Stroke(width = sw * 0.8f),
+                )
+            }
             else -> {
                 // Sliders / tuning glyph
                 drawLine(c, Offset(w * 0.14f, h * 0.28f), Offset(w * 0.86f, h * 0.28f), sw, StrokeCap.Round)

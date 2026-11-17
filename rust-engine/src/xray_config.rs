@@ -2494,6 +2494,268 @@ pub const CURATED_RU_DIRECT_DOMAINS: &[&str] = &[
     "domain:rbc.ru",
     "domain:ria.ru",
     "domain:kommersant.ru",
+    // Расширенный пакет банков, СБП, доставки, авиа/ЖД, аптек, сервисов и игр РФ (v1.7)
+    "domain:psbank.ru",
+    "domain:otpbank.ru",
+    "domain:akbars.ru",
+    "domain:bspb.ru",
+    "domain:sinara.ru",
+    "domain:rencredit.ru",
+    "domain:rsb.ru",
+    "domain:domrfbank.ru",
+    "domain:domrf.ru",
+    "domain:mtsmoney.ru",
+    "domain:ozon.bank",
+    "domain:wb.bank",
+    "domain:moex.com",
+    "domain:crpt.ru",
+    "domain:chestnyznak.ru",
+    "domain:goskey.ru",
+    "domain:pochta.ru",
+    "domain:cdek.ru",
+    "domain:boxberry.ru",
+    "domain:dellin.ru",
+    "domain:pecom.ru",
+    "domain:aeroflot.ru",
+    "domain:pobeda.aero",
+    "domain:s7.ru",
+    "domain:utair.ru",
+    "domain:tutu.ru",
+    "domain:ostrovok.ru",
+    "domain:sutochno.ru",
+    "domain:kuper.ru",
+    "domain:sbermarket.ru",
+    "domain:megamarket.ru",
+    "domain:samokat.ru",
+    "domain:edadeal.ru",
+    "domain:lenta.com",
+    "domain:auchan.ru",
+    "domain:metro-cc.ru",
+    "domain:dixy.ru",
+    "domain:kb.ru",
+    "domain:krasnoeibeloe.ru",
+    "domain:fix-price.com",
+    "domain:vseinstrumenti.ru",
+    "domain:petrovich.ru",
+    "domain:sportmaster.ru",
+    "domain:detmir.ru",
+    "domain:goldapple.ru",
+    "domain:letu.ru",
+    "domain:rivegauche.ru",
+    "domain:kari.com",
+    "domain:vkusnoitochka.ru",
+    "domain:burgerkingrus.ru",
+    "domain:rostics.ru",
+    "domain:apteka.ru",
+    "domain:eapteka.ru",
+    "domain:gorzdrav.org",
+    "domain:invitro.ru",
+    "domain:gemotest.ru",
+    "domain:prodoctorov.ru",
+    "domain:yota.ru",
+    "domain:dom.ru",
+    "domain:ertelecom.ru",
+    "domain:ttk.ru",
+    "domain:2gis.ru",
+    "domain:2gis.com",
+    "domain:hh.ru",
+    "domain:superjob.ru",
+    "domain:habr.com",
+    "domain:pikabu.ru",
+    "domain:dtf.ru",
+    "domain:vc.ru",
+    "domain:ixbt.com",
+    "domain:cyber.sports.ru",
+    "domain:sports.ru",
+    "domain:championat.com",
+    "domain:litres.ru",
+    "domain:zvuk.com",
+    "domain:uma.media",
+    "domain:lesta.ru",
+    "domain:tanki.su",
+    "domain:korabli.su",
+    "domain:youla.ru",
+];
+
+/// Guaranteed-via-VPN international services (AI, messengers, social, streaming, games, dev/design,
+/// privacy & geo-restricted vendor portals) — routed explicitly through Dual-Channel `vpn_main`
+/// BEFORE `CURATED_RU_DIRECT_DOMAINS` so 100% of restricted/geo-blocked services work seamlessly!
+pub const GUARANTEED_VPN_SERVICE_DOMAINS: &[&str] = &[
+    // ИИ и нейросети (ChatGPT, Sora, Claude, Gemini, Grok, Perplexity, Cursor, Copilot, Midjourney, Suno)
+    "domain:openai.com",
+    "domain:chatgpt.com",
+    "domain:oaistatic.com",
+    "domain:oaiusercontent.com",
+    "domain:sora.com",
+    "domain:anthropic.com",
+    "domain:claude.ai",
+    "domain:claudeusercontent.com",
+    "domain:gemini.google.com",
+    "domain:aistudio.google.com",
+    "domain:notebooklm.google.com",
+    "domain:generativelanguage.googleapis.com",
+    "domain:labs.google",
+    "domain:deepmind.google",
+    "domain:x.ai",
+    "domain:grok.com",
+    "domain:perplexity.ai",
+    "domain:midjourney.com",
+    "domain:cursor.sh",
+    "domain:cursor.com",
+    "domain:githubcopilot.com",
+    "domain:huggingface.co",
+    "domain:civitai.com",
+    "domain:elevenlabs.io",
+    "domain:suno.com",
+    "domain:suno.ai",
+    "domain:udio.com",
+    "domain:runwayml.com",
+    "domain:poe.com",
+    "domain:character.ai",
+    "domain:mistral.ai",
+    "domain:cohere.com",
+    "domain:replicate.com",
+    "domain:blackforestlabs.ai",
+    // Соцсети, звонки и мессенджеры (Discord, Instagram, Threads, FB, WhatsApp, X, TikTok, Reddit, Signal)
+    "domain:discord.com",
+    "domain:discord.gg",
+    "domain:discord.media",
+    "domain:discordapp.com",
+    "domain:discordapp.net",
+    "domain:discordstatus.com",
+    "domain:instagram.com",
+    "domain:cdninstagram.com",
+    "domain:threads.net",
+    "domain:facebook.com",
+    "domain:fbcdn.net",
+    "domain:messenger.com",
+    "domain:meta.com",
+    "domain:meta.ai",
+    "domain:whatsapp.com",
+    "domain:whatsapp.net",
+    "domain:x.com",
+    "domain:twitter.com",
+    "domain:twimg.com",
+    "domain:t.co",
+    "domain:tiktok.com",
+    "domain:tiktokv.com",
+    "domain:tiktokcdn.com",
+    "domain:tiktokcdn-eu.com",
+    "domain:tiktokcdn-us.com",
+    "domain:byteoversea.com",
+    "domain:musical.ly",
+    "domain:reddit.com",
+    "domain:redd.it",
+    "domain:redditmedia.com",
+    "domain:redditstatic.com",
+    "domain:linkedin.com",
+    "domain:licdn.com",
+    "domain:patreon.com",
+    "domain:pinterest.com",
+    "domain:pinimg.com",
+    "domain:signal.org",
+    "domain:viber.com",
+    "domain:snapchat.com",
+    "domain:bsky.app",
+    "domain:quora.com",
+    "domain:medium.com",
+    "domain:substack.com",
+    "domain:guilded.gg",
+    // Музыка, стриминг и кино (Spotify, Twitch, SoundCloud, Netflix, Crunchyroll, Disney+, Deezer)
+    "domain:spotify.com",
+    "domain:scdn.co",
+    "domain:spotifycdn.com",
+    "domain:twitch.tv",
+    "domain:ttvnw.net",
+    "domain:jtvnw.net",
+    "domain:soundcloud.com",
+    "domain:sndcdn.com",
+    "domain:netflix.com",
+    "domain:nflxvideo.net",
+    "domain:nflximg.net",
+    "domain:nflxso.net",
+    "domain:crunchyroll.com",
+    "domain:disneyplus.com",
+    "domain:max.com",
+    "domain:deezer.com",
+    "domain:tidal.com",
+    "domain:vimeo.com",
+    "domain:dailymotion.com",
+    // Игры и лаунчеры (Brawl Stars/Supercell, Roblox, Riot/Valorant/LoL, Steam, Epic, EA, Minecraft, PSN, GFN)
+    "domain:supercell.com",
+    "domain:supercellid.com",
+    "domain:brawlstarsgame.com",
+    "domain:clashroyale.com",
+    "domain:clashofclans.com",
+    "domain:roblox.com",
+    "domain:rbxcdn.com",
+    "domain:riotgames.com",
+    "domain:leagueoflegends.com",
+    "domain:playvalorant.com",
+    "domain:pvp.net",
+    "domain:steamcommunity.com",
+    "domain:epicgames.com",
+    "domain:fortnite.com",
+    "domain:unrealengine.com",
+    "domain:ea.com",
+    "domain:battle.net",
+    "domain:blizzard.com",
+    "domain:minecraft.net",
+    "domain:mojang.com",
+    "domain:xbox.com",
+    "domain:xboxlive.com",
+    "domain:playstation.com",
+    "domain:playstation.net",
+    "domain:faceit.com",
+    "domain:modrinth.com",
+    "domain:curseforge.com",
+    "domain:nexusmods.com",
+    "domain:geforcenow.com",
+    "domain:nvidia.com",
+    "domain:vrchat.com",
+    // Работа, дизайн, облака, разработка и медиа (Notion, Canva, Figma, Miro, Jira, JetBrains, Adobe, Intel)
+    "domain:notion.so",
+    "domain:notion.site",
+    "domain:canva.com",
+    "domain:figma.com",
+    "domain:miro.com",
+    "domain:trello.com",
+    "domain:atlassian.com",
+    "domain:atlassian.net",
+    "domain:slack.com",
+    "domain:zoom.us",
+    "domain:airtable.com",
+    "domain:linear.app",
+    "domain:proton.me",
+    "domain:protonmail.com",
+    "domain:bitwarden.com",
+    "domain:1password.com",
+    "domain:github.com",
+    "domain:githubusercontent.com",
+    "domain:githubassets.com",
+    "domain:gitlab.com",
+    "domain:docker.com",
+    "domain:docker.io",
+    "domain:jetbrains.com",
+    "domain:jetbrains.ai",
+    "domain:vercel.com",
+    "domain:adobe.com",
+    "domain:autodesk.com",
+    "domain:intel.com",
+    "domain:amd.com",
+    "domain:dell.com",
+    "domain:speedtest.net",
+    "domain:ooklaserver.net",
+    "domain:fast.com",
+    "domain:archive.org",
+    "domain:bbc.com",
+    "domain:dw.com",
+    "domain:euronews.com",
+    "domain:meduza.io",
+    "domain:rutracker.org",
+    "domain:nnmclub.to",
+    "domain:flibusta.is",
+    "domain:lostfilm.tv",
 ];
 
 /// Build production Android `xray-rust` TUN configuration (v1.4 Browser-First Architecture):
@@ -2534,6 +2796,41 @@ pub const BROWSER_DOH_DOT_DOMAINS: &[&str] = &[
     "domain:doh.cleanbrowsing.org",
     "domain:dns.mullvad.net",
     "domain:freedns.controld.com",
+    "domain:controld.com",
+    "domain:dns.sb",
+    "domain:doh.sb",
+    "domain:mozilla.cloudflare-dns.com",
+    "domain:security.cloudflare-dns.com",
+    "domain:family.adguard-dns.com",
+    "domain:unfiltered.adguard-dns.com",
+    "domain:dns.alidns.com",
+];
+
+pub const BROWSER_DOH_DOT_IPS: &[&str] = &[
+    "1.1.1.1",
+    "1.0.0.1",
+    "8.8.8.8",
+    "8.8.4.4",
+    "9.9.9.9",
+    "9.9.9.11",
+    "149.112.112.112",
+    "149.112.112.11",
+    "94.140.14.14",
+    "94.140.15.15",
+    "94.140.14.140",
+    "94.140.14.141",
+    "208.67.222.222",
+    "208.67.220.220",
+    "76.76.2.0",
+    "76.76.10.0",
+    "185.228.168.9",
+    "185.222.222.222",
+    "77.88.8.8",
+    "77.88.8.1",
+    "77.88.8.2",
+    "77.88.8.3",
+    "77.88.8.7",
+    "77.88.8.88",
 ];
 
 /// YouTube video, API & thumbnail domains split-routed to a verified 0%-monetized YouTube server
@@ -2610,7 +2907,206 @@ pub const CURATED_AD_DOMAINS: &[&str] = &[
     "domain:exoclick.com",
     "domain:trafficjunky.net",
     "domain:juicyads.com",
+    // Доп. фильтр навязчивой рекламы, push-спама, трекеров и веб-майнеров (v1.7, 0 МБ доп. ОЗУ)
+    "domain:clickadu.com",
+    "domain:hilltopads.net",
+    "domain:adcash.com",
+    "domain:trafficstars.com",
+    "domain:richads.com",
+    "domain:evadav.com",
+    "domain:galaksion.com",
+    "domain:bidvertiser.com",
+    "domain:revcontent.com",
+    "domain:teads.tv",
+    "domain:smartadserver.com",
+    "domain:indexexchange.com",
+    "domain:sharethrough.com",
+    "domain:3lift.com",
+    "domain:media.net",
+    "domain:amazon-adsystem.com",
+    "domain:ads.tiktok.com",
+    "domain:analytics.tiktok.com",
+    "domain:business-api.tiktok.com",
+    "domain:ads-twitter.com",
+    "domain:ads.linkedin.com",
+    "domain:scorecardresearch.com",
+    "domain:quantserve.com",
+    "domain:hotjar.com",
+    "domain:mouseflow.com",
+    "domain:luckyorange.com",
+    "domain:appsflyer.com",
+    "domain:adjust.com",
+    "domain:appmetrica.yandex.ru",
+    "domain:appmetrica.yandex.net",
+    "domain:top-fwz1.mail.ru",
+    "domain:coinhive.com",
+    "domain:coin-hive.com",
+    "domain:cryptoloot.pro",
+    "domain:webminepool.com",
 ];
+
+/// User-defined per-site routing rules configured in Settings («Свои правила сайтов»):
+/// force specific domains through VPN, direct (bypass VPN), or block (anti-ad / parental).
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct CustomDomainRules {
+    #[serde(default)]
+    pub vpn: Vec<String>,
+    #[serde(default)]
+    pub direct: Vec<String>,
+    #[serde(default)]
+    pub block: Vec<String>,
+}
+
+impl CustomDomainRules {
+    pub fn from_json_str(raw: &str) -> Self {
+        let t = raw.trim();
+        if t.is_empty() || t == "{}" {
+            return Self::default();
+        }
+        let parsed: Self = serde_json::from_str(t).unwrap_or_default();
+        Self {
+            vpn: sanitize_custom_domain_list(&parsed.vpn),
+            direct: sanitize_custom_domain_list(&parsed.direct),
+            block: sanitize_custom_domain_list(&parsed.block),
+        }
+    }
+}
+
+fn sanitize_custom_domain_list(items: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for raw in items.iter().take(200) {
+        let mut s = raw.trim().to_ascii_lowercase();
+        let mut prefix = "domain:";
+        if let Some(rest) = s.strip_prefix("https://").or_else(|| s.strip_prefix("http://")) {
+            s = rest.to_string();
+        }
+        if let Some(rest) = s.strip_prefix("full:") {
+            prefix = "full:";
+            s = rest.to_string();
+        } else if let Some(rest) = s.strip_prefix("domain:") {
+            s = rest.to_string();
+        }
+        if let Some(rest) = s.strip_prefix("*.") {
+            s = rest.to_string();
+        }
+        if let Some((host, _)) = s.split_once(['/', '?', '#', ':']) {
+            s = host.to_string();
+        }
+        let trimmed = s.trim_matches('*').trim_matches('.');
+        let s = if prefix == "full:" {
+            trimmed
+        } else {
+            trimmed.strip_prefix("www.").unwrap_or(trimmed)
+        };
+        if s.len() >= 3
+            && s.len() <= 128
+            && s.contains('.')
+            && s != "localhost"
+            && !s.ends_with(".localhost")
+            && !s.ends_with(".local")
+            && s.parse::<std::net::IpAddr>().is_err()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+            && !s.starts_with('-')
+            && !s.ends_with('-')
+            && !s.contains("..")
+        {
+            let rule = format!("{prefix}{s}");
+            if !out.contains(&rule) {
+                out.push(rule);
+            }
+        }
+    }
+    out
+}
+
+/// True if two host strings belong to the same physical host OR the same IPv4 `/24` subnet —
+/// ensuring Primary (`vpn_0`) and Hot-Standby (`vpn_1`) never share a single datacenter rack or
+/// TSPU `/24` block!
+pub fn hosts_share_failure_domain(a: &str, b: &str) -> bool {
+    if a.eq_ignore_ascii_case(b) {
+        return true;
+    }
+    if let (Ok(ip_a), Ok(ip_b)) = (a.parse::<std::net::Ipv4Addr>(), b.parse::<std::net::Ipv4Addr>())
+    {
+        let oa = ip_a.octets();
+        let ob = ip_b.octets();
+        return oa[0] == ob[0] && oa[1] == ob[1] && oa[2] == ob[2];
+    }
+    false
+}
+
+/// Canonical v1.7 Hot-Standby priority comparator:
+/// - **Tier 0 (HIGHEST PRIORITY):** Exact same country as the active Primary server (`primary.exit_country`)!
+///   Zero country jump on failover — sessions, tokens, games, and streams stay seamless!
+/// - **Tier 1 (NEXT HIGHEST PRIORITY):** Germany (`🇩🇪 DE`) and USA (`🇺🇸 US`) backbone reserves!
+/// - **Tier 2:** Top low-latency foreign Tier-1 exits (`NL`, `FI`, `SE`, `GB`, `FR`, `CH`, `AT`, `CA`).
+/// - **Tier 3:** Any other verified foreign exit (NEVER `"RU"`!).
+/// - **Tier 4:** Local Cloudflare WARP fallback (`"CF"`).
+/// Within each country tier, prioritizes: `/24` subnet independence -> recent-failure cleanliness ->
+/// custom subscription tier -> transport diversity (TCP standby behind QUIC/UDP primary) ->
+/// stability streak (`ok_streak`) + low RTT + high throughput!
+pub fn standby_priority_key(
+    n: &VerifiedVpnNode,
+    primary: &VerifiedVpnNode,
+    now_unix: u64,
+) -> (u8, u8, u8, u8, u8, i32) {
+    let p_cc = primary.exit_country.trim().to_ascii_uppercase();
+    let n_cc = n.exit_country.trim().to_ascii_uppercase();
+    let same_primary_country =
+        p_cc.len() == 2 && !matches!(p_cc.as_str(), "RU" | "CF") && n_cc == p_cc;
+    let country_tier = if same_primary_country {
+        0u8 // #1 Absolute highest priority: same country as current Primary!
+    } else if matches!(n_cc.as_str(), "DE" | "US") {
+        1u8 // #2 Priority reserve tier: Germany (DE) & USA (US)!
+    } else if matches!(
+        n_cc.as_str(),
+        "NL" | "FI" | "SE" | "GB" | "FR" | "CH" | "AT" | "CA"
+    ) {
+        2u8
+    } else if n_cc == "CF" {
+        4u8
+    } else {
+        3u8
+    };
+
+    let same_domain_penalty = if hosts_share_failure_domain(&n.host, &primary.host) {
+        1u8
+    } else {
+        0u8
+    };
+    let recent_fail_penalty = if n.fail_count > 0 {
+        n.fail_count.min(3) as u8
+    } else if n.last_fail_unix > 0 && now_unix.saturating_sub(n.last_fail_unix) < 1200 {
+        1u8
+    } else {
+        0u8
+    };
+    let custom_rank = if n.source_tier == 0 { 0u8 } else { 1u8 };
+
+    // Anti-drop transport diversity: if Primary uses QUIC/UDP (Hysteria2/WG/MASQUE) and carrier
+    // throttles UDP mid-session, prefer a TCP/Reality/XHTTP standby so failover is 100% immune!
+    let primary_is_udp = matches!(primary.protocol.as_str(), "hysteria2" | "wireguard" | "masque")
+        || primary.via_warp;
+    let cand_is_udp =
+        matches!(n.protocol.as_str(), "hysteria2" | "wireguard" | "masque") || n.via_warp;
+    let transport_div = if primary_is_udp && cand_is_udp { 1u8 } else { 0u8 };
+
+    let rtt = if n.rtt_ms == 0 { 450i32 } else { n.rtt_ms as i32 };
+    let streak_bonus = (n.ok_streak.min(12) as i32) * 8;
+    let speed_bonus = (n.kbps.min(3000) / 20) as i32;
+    let de_tiebreak = if n_cc == "DE" { -18 } else if n_cc == "US" { -10 } else { 0 };
+    let perf_score = rtt - streak_bonus - speed_bonus + de_tiebreak;
+
+    (
+        country_tier,
+        same_domain_penalty,
+        recent_fail_penalty,
+        custom_rank,
+        transport_div,
+        perf_score,
+    )
+}
 
 pub fn build_production_tun_config(
     nodes: &[VerifiedVpnNode],
@@ -2675,34 +3171,42 @@ pub fn build_production_tun_config_ex(
 /// - When `"AUTO"` is selected, picks #1 best overall as primary + #2 best distinct-host across all
 ///   healthy countries as instant 0-ms hot-standby!
 pub fn node_matches_strict_region(n: &VerifiedVpnNode, selected_region: &str, whitelist_mode: bool) -> bool {
+    // NEVER match a domestic Russian (`RU`) exit — VPN replaces Russia with a foreign IP!
+    if n.exit_country.eq_ignore_ascii_case("RU") {
+        return false;
+    }
     let reg = selected_region.trim().to_ascii_uppercase();
+    if reg == "RU" {
+        return false;
+    }
     if whitelist_mode || reg == "WL" {
-        return n.whitelist_friendly
-            && !n.via_warp
-            && (n.source_tier == 0 || !matches!(n.exit_country.as_str(), "RU" | "CF"));
+        return n.whitelist_friendly && !n.via_warp && n.exit_country != "CF";
     }
     match reg.as_str() {
-        "" | "AUTO" => n.source_tier == 0 || !matches!(n.exit_country.as_str(), "RU" | "CF"),
-        "YT" => n.yt_ad_free && !matches!(n.exit_country.as_str(), "RU" | "CF"),
+        "" | "AUTO" => n.exit_country != "CF",
+        "YT" => n.yt_ad_free && n.exit_country != "CF",
         "WARP" => n.via_warp || n.protocol.starts_with("warp-"),
         "EU" => matches!(
             n.exit_country.as_str(),
             "DE" | "NL" | "FI" | "GB" | "FR" | "SE" | "PL" | "CH" | "AT" | "CZ" | "IT" | "ES"
-                | "EE" | "LV" | "LT" | "DK" | "NO" | "IE" | "BE" | "LU" | "RO" | "BG" | "AL"
-                | "MD"
+                | "PT" | "EE" | "LV" | "LT" | "DK" | "NO" | "IE" | "BE" | "LU" | "HU" | "RO"
+                | "BG" | "AL" | "MD"
         ),
         code if code.len() == 2 => n.exit_country.eq_ignore_ascii_case(code),
         _ => true,
     }
 }
 
-/// Complete v1.6.0 Dual-Channel TUN config build output.
+/// Complete v1.7.0 Anti-Drop Dual-Channel TUN config build output.
 #[derive(Debug, Clone)]
 pub struct ProductionTunPlan {
     pub config_json: String,
     pub primary: VerifiedVpnNode,
     /// Instant 0-ms hot-standby (`vpn_1`) mounted under `vpn_main.fallbackTag` when `dual_channel` is active.
+    /// Strictly prioritized: `#1 Same country as primary` -> `#2 Germany (DE) / USA (US)` -> `#3 Other foreign`.
     pub standby: Option<VerifiedVpnNode>,
+    /// `"same_country"`, `"de_us"`, `"foreign"`, or `"none"`.
+    pub standby_tier: String,
     /// Total verified standby candidates available in the active region scope.
     pub standby_pool_count: usize,
     pub yt_mode_desc: String,
@@ -2772,18 +3276,69 @@ pub fn build_production_tun_config_v16(
     local_socks_auth: Option<(&str, &str)>,
     warp_acc: Option<&WarpAccountCache>,
 ) -> Result<ProductionTunPlan, String> {
+    build_production_tun_config_v17(
+        nodes,
+        pinned_node_id,
+        selected_region,
+        whitelist_mode,
+        bypass_ru_domains,
+        fragment_tls,
+        adblock,
+        dual_channel,
+        idle_power_save,
+        local_socks_port,
+        local_socks_auth,
+        warp_acc,
+        None,
+    )
+}
+
+/// VeloxVPN v1.7.0 Anti-Drop Production TUN Config Builder:
+/// 1) **Zero Russia Exits (`exit_country != "RU"`)** across Primary, Standby, Failover & YT split.
+/// 2) **Smart Dual-Channel Reserve Priority**:
+///    - Tier 0 (Maximum Priority): **Same country as active Primary (`vpn_0`)** on distinct `/24` host!
+///    - Tier 1 (Next Highest): **Germany (`🇩🇪 DE`) & USA (`🇺🇸 US`)** backbone reserves!
+///    - Tier 2: Other fast foreign exits (strict country lock preserved on explicit country selection!).
+/// 3) **Anti-Drop Socket Keepalives & RFC 5482 `tcpUserTimeout`**: defeats 45s mobile carrier CGNAT
+///    drops & 15-minute blackhole stalls on open sockets while sending 0 packets when idle!
+/// 4) **250+ Built-in Service Rules + Custom Per-Site Rules (`VPN` / `Direct` / `Block`)**.
+#[allow(clippy::too_many_arguments)]
+pub fn build_production_tun_config_v17(
+    nodes: &[VerifiedVpnNode],
+    pinned_node_id: Option<&str>,
+    selected_region: &str,
+    whitelist_mode: bool,
+    bypass_ru_domains: bool,
+    fragment_tls: bool,
+    adblock: bool,
+    dual_channel: bool,
+    idle_power_save: bool,
+    local_socks_port: u16,
+    local_socks_auth: Option<(&str, &str)>,
+    warp_acc: Option<&WarpAccountCache>,
+    custom_rules: Option<&CustomDomainRules>,
+) -> Result<ProductionTunPlan, String> {
     let can_warp_chain = warp_acc.is_some_and(|w| w.has_masque());
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let reg_up = selected_region.trim().to_ascii_uppercase();
-    let is_strict_country = reg_up.len() == 2;
+    let raw_reg = selected_region.trim().to_ascii_uppercase();
+    let reg_up = if raw_reg == "RU" {
+        "DE".to_string()
+    } else {
+        raw_reg
+    };
+    let is_strict_country = reg_up.len() == 2 && !matches!(reg_up.as_str(), "EU" | "WL" | "YT");
     let is_strict_mode = matches!(reg_up.as_str(), "WL" | "YT" | "WARP" | "EU") || whitelist_mode;
 
     let mut candidates: Vec<&VerifiedVpnNode> = nodes
         .iter()
         .filter(|n| {
+            // NEVER select a domestic Russian (`RU`) exit server!
+            if n.exit_country.eq_ignore_ascii_case("RU") {
+                return false;
+            }
             let is_pinned = pinned_node_id.is_some_and(|id| id == n.id);
             if n.via_warp && !can_warp_chain {
                 return false;
@@ -2799,7 +3354,7 @@ pub fn build_production_tun_config_v16(
         })
         .collect();
     if candidates.is_empty() {
-        return Err("Нет проверенных узлов для запуска туннеля".into());
+        return Err("Нет проверенных зарубежных узлов для запуска туннеля".into());
     }
 
     // Strict country enforcement: when the user selected a specific country (e.g. Germany "DE")
@@ -2825,7 +3380,7 @@ pub fn build_production_tun_config_v16(
         }
     }
 
-    // Rank candidates preserving caller's custom-tier + RTT + speed order within equal health tiers
+    // Rank Primary preserving caller's custom-tier + DE/US + stability + RTT order
     candidates.sort_by_key(|n| {
         let is_pinned = pinned_node_id.is_some_and(|id| id == n.id);
         let is_http_only_proxy = if matches!(n.protocol.as_str(), "opera" | "http") {
@@ -2833,9 +3388,16 @@ pub fn build_production_tun_config_v16(
         } else {
             0u8
         };
-        let is_local_or_ru = if n.source_tier == 0 {
+        let is_local_cf = if n.source_tier >= 4 || n.exit_country == "CF" {
+            1u8
+        } else {
             0u8
-        } else if n.source_tier >= 4 || matches!(n.exit_country.as_str(), "CF" | "RU") {
+        };
+        let recent_fail = if !is_pinned
+            && n.fail_count == 0
+            && n.last_fail_unix > 0
+            && now.saturating_sub(n.last_fail_unix) < 900
+        {
             1u8
         } else {
             0u8
@@ -2844,45 +3406,53 @@ pub fn build_production_tun_config_v16(
             if is_pinned { 0u8 } else { 1u8 },
             if n.device_verified { 0u8 } else { 1u8 },
             is_http_only_proxy,
-            is_local_or_ru,
+            is_local_cf,
             n.fail_count,
+            recent_fail,
         )
     });
 
     let chosen_primary = (*candidates[0]).clone();
 
-    // Effective region scope for the hot-standby channel (`vpn_1`):
-    // - If user chose a specific country (e.g. `DE`) -> `vpn_1` MUST be `DE`!
-    // - If user pinned a server inside a specific country while `selected_region == DE` -> `vpn_1` MUST be `DE`!
-    // - If user chose `AUTO` (even with a pinned server) -> `vpn_1` is the best verified alternative across regions!
-    let standby_eligible: Vec<&VerifiedVpnNode> = candidates
+    // Hot-Standby (`vpn_1`) pool & v1.7 Priority Hierarchy:
+    // - Specific selected country (e.g. `DE`, `US`, `FI`): strictly restricted to that country!
+    // - `AUTO` / `WL` / `YT` / `EU` / `WARP`: sorted by `standby_priority_key`:
+    //     Tier 0 (HIGHEST): Exact same country as `chosen_primary.exit_country`!
+    //     Tier 1 (NEXT):    Germany (`🇩🇪 DE`) & USA (`🇺🇸 US`) priority reserves!
+    //     Tier 2+:          Other verified foreign exits (NEVER `"RU"`!)
+    let mut standby_eligible: Vec<&VerifiedVpnNode> = nodes
         .iter()
-        .copied()
-        .skip(1)
         .filter(|n| {
             n.id != chosen_primary.id
+                && !n.exit_country.eq_ignore_ascii_case("RU")
+                && (!n.via_warp || can_warp_chain)
                 && n.device_verified
                 && n.fail_count < 2
                 && !matches!(n.protocol.as_str(), "opera" | "http")
                 && node_matches_strict_region(n, &reg_up, whitelist_mode)
         })
         .collect();
+    standby_eligible.sort_by_key(|n| standby_priority_key(n, &chosen_primary, now));
     let standby_count = standby_eligible.len();
 
-    // Pick verified `vpn_1` hot-standby: strongly prefer a distinct physical server host/IP so a
-    // VPS/datacenter outage never affects both channels simultaneously; fall back to distinct port/transport
-    // on same gateway if a user's private subscription routes all servers via one hostname.
     let chosen_standby: Option<VerifiedVpnNode> = if dual_channel
         && !matches!(chosen_primary.protocol.as_str(), "opera" | "http")
     {
-        standby_eligible
-            .iter()
-            .copied()
-            .find(|n| !n.host.eq_ignore_ascii_case(&chosen_primary.host))
-            .or_else(|| standby_eligible.first().copied())
-            .cloned()
+        standby_eligible.first().copied().cloned()
     } else {
         None
+    };
+
+    let standby_tier = match &chosen_standby {
+        Some(sb)
+            if !chosen_primary.exit_country.is_empty()
+                && sb.exit_country.eq_ignore_ascii_case(&chosen_primary.exit_country) =>
+        {
+            "same_country".to_string()
+        }
+        Some(sb) if matches!(sb.exit_country.as_str(), "DE" | "US") => "de_us".to_string(),
+        Some(_) => "foreign".to_string(),
+        None => "none".to_string(),
     };
 
     let primary_tag = "vpn_0";
@@ -2975,21 +3545,24 @@ pub fn build_production_tun_config_v16(
                 if let Some(st) = obj.get_mut("settings").and_then(|v| v.as_object_mut()) {
                     st.entry("mtu").or_insert_with(|| json!(1280));
                 }
-            } else if proto == "masque" {
-                // Radio-tail battery optimization: 25s keepalive vs default 10s (2.5x fewer wakeups!)
-                if let Some(ms) = obj
-                    .get_mut("streamSettings")
-                    .and_then(|v| v.as_object_mut())
-                    .and_then(|s| s.get_mut("masqueSettings"))
-                    .and_then(|v| v.as_object_mut())
-                {
-                    ms.entry("xmux")
-                        .or_insert_with(|| json!({ "hKeepAlivePeriod": 25 }));
-                }
+            }
+            // Radio-tail battery optimization: 25s keepalive vs default 10s (2.5x fewer wakeups!)
+            if let Some(ms) = obj
+                .get_mut("streamSettings")
+                .and_then(|v| v.as_object_mut())
+                .and_then(|s| s.get_mut("masqueSettings"))
+                .and_then(|v| v.as_object_mut())
+            {
+                ms.entry("xmux")
+                    .or_insert_with(|| json!({ "hKeepAlivePeriod": 25 }));
             }
             if !n.via_warp {
                 if let Some(ss) = obj.get_mut("streamSettings").and_then(|v| v.as_object_mut()) {
-                    let net = ss.get("network").and_then(|v| v.as_str()).unwrap_or("");
+                    let net = ss
+                        .get("network")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     let sec = ss.get("security").and_then(|v| v.as_str()).unwrap_or("");
                     let is_h3 = ss
                         .get("tlsSettings")
@@ -2997,13 +3570,57 @@ pub fn build_production_tun_config_v16(
                         .and_then(|v| v.as_array())
                         .is_some_and(|a| a.len() == 1 && a[0].as_str() == Some("h3"));
                     let is_tcp_carrier =
-                        matches!(net, "tcp" | "ws" | "httpupgrade" | "grpc" | "xhttp") && !is_h3;
+                        matches!(net.as_str(), "tcp" | "ws" | "httpupgrade" | "grpc" | "xhttp")
+                            && !is_h3;
                     if is_tcp_carrier && matches!(sec, "tls" | "reality") {
                         if !fragment_tls {
                             ss.remove("finalmask");
                         } else if sec == "tls" || n.fragment_enabled {
-                            // Respect user's `fragment_tls = true` consistently on TLS & fragment-verified REALITY
                             ss.entry("finalmask").or_insert_with(tcp_fragment_mask);
+                        }
+                    }
+                    // Anti-drop keepalives on active connections (0 packets when 0 sockets open!):
+                    // - TCP: `tcpKeepAliveIdle=28s` beats 45s mobile carrier CGNAT drops; RFC 5482
+                    //   `tcpUserTimeout=15000ms` kills blackholed sockets in 15s instead of 15 min!
+                    // - WS / gRPC / XHTTP: lightweight HTTP/2 & WS PING frames keep multiplexed pipes hot!
+                    let has_dialer_proxy = ss
+                        .get("sockopt")
+                        .and_then(|v| v.get("dialerProxy"))
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| !s.is_empty());
+                    if is_tcp_carrier && !has_dialer_proxy {
+                        let ka_idle = if idle_power_save { 55 } else { 28 };
+                        let ka_intvl = if idle_power_save { 30 } else { 15 };
+                        let user_to = if idle_power_save { 18000 } else { 15000 };
+                        let sock = ss
+                            .entry("sockopt")
+                            .or_insert_with(|| json!({}));
+                        if let Some(so) = sock.as_object_mut() {
+                            so.entry("tcpKeepAliveIdle").or_insert_with(|| json!(ka_idle));
+                            so.entry("tcpKeepAliveInterval").or_insert_with(|| json!(ka_intvl));
+                            so.entry("tcpUserTimeout").or_insert_with(|| json!(user_to));
+                        }
+                    }
+                    if net == "ws" {
+                        if let Some(ws) = ss.get_mut("wsSettings").and_then(|v| v.as_object_mut()) {
+                            let hb = if idle_power_save { 45 } else { 25 };
+                            ws.entry("heartbeatPeriod").or_insert_with(|| json!(hb));
+                        }
+                    } else if net == "grpc" {
+                        if let Some(gr) = ss.get_mut("grpcSettings").and_then(|v| v.as_object_mut()) {
+                            gr.entry("idle_timeout").or_insert_with(|| json!(60));
+                            gr.entry("health_check_timeout").or_insert_with(|| json!(15));
+                        }
+                    } else if net == "xhttp" {
+                        if let Some(xh) = ss.get_mut("xhttpSettings").and_then(|v| v.as_object_mut()) {
+                            if let Some(xmux) = xh
+                                .get_mut("extra")
+                                .and_then(|v| v.as_object_mut())
+                                .and_then(|e| e.get_mut("xmux"))
+                                .and_then(|v| v.as_object_mut())
+                            {
+                                xmux.entry("hKeepAlivePeriod").or_insert_with(|| json!(25));
+                            }
                         }
                     }
                 }
@@ -3085,11 +3702,16 @@ pub fn build_production_tun_config_v16(
         }
     }
 
+    // Direct outbound: prefer IPv4 dialing via the modern socket-option location
+    // (legacy `settings.domainStrategy` is deprecated in xray-rust v0.10.0).
     outbounds.push(json!({
         "tag": "direct",
         "protocol": "freedom",
-        "settings": {
-            "domainStrategy": "UseIPv4"
+        "settings": {},
+        "streamSettings": {
+            "sockopt": {
+                "domainStrategy": "UseIPv4"
+            }
         }
     }));
     outbounds.push(json!({
@@ -3130,7 +3752,33 @@ pub fn build_production_tun_config_v16(
         "outboundTag": "direct"
     }));
 
-    // Rule #3: Surgical zero-RAM Ad & Tracker Blocker
+    let empty_custom = CustomDomainRules::default();
+    let cr = custom_rules.unwrap_or(&empty_custom);
+
+    // Rule #2b: User-defined custom per-site rules (highest priority over presets!)
+    if !cr.block.is_empty() {
+        rules.push(json!({
+            "type": "field",
+            "domain": cr.block,
+            "outboundTag": "block"
+        }));
+    }
+    if !cr.direct.is_empty() {
+        rules.push(json!({
+            "type": "field",
+            "domain": cr.direct,
+            "outboundTag": "direct"
+        }));
+    }
+    if !cr.vpn.is_empty() {
+        let mut r_cv = Map::new();
+        r_cv.insert("type".into(), json!("field"));
+        r_cv.insert("network".into(), json!("tcp"));
+        r_cv.insert("domain".into(), json!(cr.vpn));
+        rules.push(attach_main_target(r_cv));
+    }
+
+    // Rule #3: Surgical zero-RAM Ad, Tracker, Push-Spam & Miner Blocker
     if adblock {
         rules.push(json!({
             "type": "field",
@@ -3139,7 +3787,7 @@ pub fn build_production_tun_config_v16(
         }));
     }
 
-    // Rule #4: Reject browser QUIC (`udp:443`) & DoQ (`udp:853`); keep Discord/TG/WA voice UDP open!
+    // Rule #4: Reject browser QUIC (`udp:443`) & DoQ (`udp:853`); keep Discord/TG/WA/games UDP open!
     let block_udp_ports = if primary_supports_udp || mounted_warp_carrier {
         "443,853"
     } else {
@@ -3164,10 +3812,7 @@ pub fn build_production_tun_config_v16(
         rules.push(json!({
             "type": "field",
             "inboundTag": ["tun-in", "local-socks"],
-            "ip": [
-                "1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4", "9.9.9.9", "149.112.112.112",
-                "77.88.8.8", "77.88.8.1", "77.88.8.2", "77.88.8.3", "77.88.8.7", "77.88.8.88"
-            ],
+            "ip": BROWSER_DOH_DOT_IPS,
             "port": "53,443,853",
             "outboundTag": "block"
         }));
@@ -3182,13 +3827,7 @@ pub fn build_production_tun_config_v16(
         let mut r_ip = Map::new();
         r_ip.insert("type".into(), json!("field"));
         r_ip.insert("inboundTag".into(), json!(["tun-in", "local-socks"]));
-        r_ip.insert(
-            "ip".into(),
-            json!([
-                "1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4", "9.9.9.9", "149.112.112.112",
-                "77.88.8.8", "77.88.8.1", "77.88.8.2", "77.88.8.3", "77.88.8.7", "77.88.8.88"
-            ]),
-        );
+        r_ip.insert("ip".into(), json!(BROWSER_DOH_DOT_IPS));
         r_ip.insert("port".into(), json!("53,443,853"));
         rules.push(attach_main_target(r_ip));
     }
@@ -3203,7 +3842,17 @@ pub fn build_production_tun_config_v16(
         }));
     }
 
-    // Rule #7: Curated domestic Russian banks, Gosuslugi, marketplaces & portals direct
+    // Rule #6b: Guaranteed-via-VPN services (135+ AI, Discord, Social, Streaming, Games, Dev/Design)
+    // placed strictly BEFORE domestic RU bypass so geo-blocked services never leak directly!
+    {
+        let mut r_svc = Map::new();
+        r_svc.insert("type".into(), json!("field"));
+        r_svc.insert("network".into(), json!("tcp"));
+        r_svc.insert("domain".into(), json!(GUARANTEED_VPN_SERVICE_DOMAINS));
+        rules.push(attach_main_target(r_svc));
+    }
+
+    // Rule #7: Curated domestic Russian banks, SBP, Gosuslugi, delivery, marketplaces & portals direct
     if bypass_ru_domains {
         rules.push(json!({
             "type": "field",
@@ -3240,15 +3889,30 @@ pub fn build_production_tun_config_v16(
     rules.push(attach_main_target(r_tcp));
 
     let mut dns_servers: Vec<Value> = Vec::with_capacity(5);
-    if bypass_ru_domains {
-        dns_servers.push(json!({
-            "address": "https+local://common.dot.dns.yandex.net/dns-query",
-            "domains": CURATED_RU_DIRECT_DOMAINS
-        }));
-        dns_servers.push(json!({
-            "address": "tcp+local://77.88.8.8",
-            "domains": CURATED_RU_DIRECT_DOMAINS
-        }));
+    if bypass_ru_domains || !cr.direct.is_empty() {
+        let mut direct_dns_domains: Vec<String> = Vec::new();
+        if bypass_ru_domains {
+            direct_dns_domains.extend(CURATED_RU_DIRECT_DOMAINS.iter().map(|s| (*s).to_string()));
+        }
+        for d in &cr.direct {
+            if !direct_dns_domains.contains(d) {
+                direct_dns_domains.push(d.clone());
+            }
+        }
+        // Exclude any domain explicitly placed in `cr.vpn` so user's Force-VPN always wins!
+        if !cr.vpn.is_empty() {
+            direct_dns_domains.retain(|d| !cr.vpn.contains(d));
+        }
+        if !direct_dns_domains.is_empty() {
+            dns_servers.push(json!({
+                "address": "https+local://common.dot.dns.yandex.net/dns-query",
+                "domains": direct_dns_domains
+            }));
+            dns_servers.push(json!({
+                "address": "tcp+local://77.88.8.8",
+                "domains": direct_dns_domains
+            }));
+        }
     }
     if primary_is_http {
         dns_servers.push(json!("https://cloudflare-dns.com/dns-query"));
@@ -3265,14 +3929,19 @@ pub fn build_production_tun_config_v16(
         json!({
             "enabled": true,
             "ipv4Pool": "198.19.0.0/16",
-            "poolSize": 32768,
-            "ttl": 20
+            "poolSize": 65534,
+            "ttl": 45
         }),
     );
-    if adblock {
+    if adblock || !cr.block.is_empty() {
         let mut hosts_map = Map::new();
-        for ad_dom in CURATED_AD_DOMAINS {
-            hosts_map.insert((*ad_dom).to_string(), json!("#3"));
+        if adblock {
+            for ad_dom in CURATED_AD_DOMAINS {
+                hosts_map.insert((*ad_dom).to_string(), json!("#3"));
+            }
+        }
+        for b_dom in &cr.block {
+            hosts_map.insert(b_dom.clone(), json!("#3"));
         }
         dns_obj.insert("hosts".into(), Value::Object(hosts_map));
     }
@@ -3309,6 +3978,7 @@ pub fn build_production_tun_config_v16(
         config_json: Value::Object(root).to_string(),
         primary: chosen_primary,
         standby: chosen_standby,
+        standby_tier,
         standby_pool_count: standby_count,
         yt_mode_desc,
         dual_channel_active: has_dual,

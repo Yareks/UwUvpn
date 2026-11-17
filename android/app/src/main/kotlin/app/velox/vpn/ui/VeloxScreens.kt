@@ -86,6 +86,7 @@ import app.velox.vpn.core.InstalledAppInfo
 import app.velox.vpn.core.LiveProgressUpdate
 import app.velox.vpn.core.RuntimeProfileMode
 import app.velox.vpn.core.SELECTABLE_REGIONS
+import app.velox.vpn.core.ServicesCheckResult
 import app.velox.vpn.core.SubSourceItem
 import app.velox.vpn.core.TgBridgeStatus
 import app.velox.vpn.core.TgProxy
@@ -115,6 +116,9 @@ fun VeloxRootScreen(
     isBusyWarp: Boolean,
     isBusyImport: Boolean,
     batteryIgnored: Boolean,
+    servicesResult: ServicesCheckResult,
+    isCheckingServices: Boolean,
+    onCheckServices: () -> Unit,
     snackbarHostState: SnackbarHostState,
     onToggleVpn: () -> Unit,
     onRetryFreshVpn: () -> Unit,
@@ -171,7 +175,7 @@ fun VeloxRootScreen(
                 tgCount = snapshot.tgProxies.size,
                 onSelect = { idx ->
                     tab = idx
-                    if (idx == 1) onTgTabOpened()
+                    if (idx == 2) onTgTabOpened()
                 }
             )
         }
@@ -213,7 +217,15 @@ fun VeloxRootScreen(
                     onUpdateSettings = onUpdateSettings,
                 )
 
-                1 -> TelegramTabContent(
+                1 -> ServicesTabContent(
+                    result = servicesResult,
+                    isChecking = isCheckingServices,
+                    vpnConnected = runtime.phase == VpnPhase.CONNECTED,
+                    runtime = runtime,
+                    onCheck = onCheckServices,
+                )
+
+                2 -> TelegramTabContent(
                     settings = settings,
                     proxies = snapshot.tgProxies,
                     tgStatus = tgStatus,
@@ -229,7 +241,7 @@ fun VeloxRootScreen(
                     }
                 )
 
-                2 -> SettingsTabContent(
+                3 -> SettingsTabContent(
                     settings = settings,
                     snapshot = snapshot,
                     isBusyWarp = isBusyWarp,
@@ -431,15 +443,9 @@ internal fun VeloxBottomBar(
                 onClick = { onSelect(1) },
                 colors = itemColors,
                 icon = {
-                    NavVectorIcon(kind = 1, active = selectedTab == 1)
+                    NavVectorIcon(kind = 3, active = selectedTab == 1)
                 },
-                label = {
-                    Text(
-                        text = if (tgCount > 0) "Telegram ($tgCount)" else "Telegram",
-                        style = MaterialTheme.typography.labelMedium,
-                        maxLines = 1,
-                    )
-                }
+                label = { Text("Сервисы", style = MaterialTheme.typography.labelMedium) }
             )
 
             NavigationBarItem(
@@ -447,7 +453,23 @@ internal fun VeloxBottomBar(
                 onClick = { onSelect(2) },
                 colors = itemColors,
                 icon = {
-                    NavVectorIcon(kind = 2, active = selectedTab == 2)
+                    NavVectorIcon(kind = 1, active = selectedTab == 2)
+                },
+                label = {
+                    Text(
+                        text = if (tgCount > 0) "TG ($tgCount)" else "Telegram",
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                    )
+                }
+            )
+
+            NavigationBarItem(
+                selected = selectedTab == 3,
+                onClick = { onSelect(3) },
+                colors = itemColors,
+                icon = {
+                    NavVectorIcon(kind = 2, active = selectedTab == 3)
                 },
                 label = { Text("Настройки", style = MaterialTheme.typography.labelMedium) }
             )

@@ -236,7 +236,20 @@ object VeloxNative {
         idlePowerSave: Boolean,
         socksUser: String,
         socksPass: String,
+        customRulesJson: String,
     ): String
+
+    /** On-demand real 12-service reachability, anti-RU IP & YouTube 0%-ad live check. */
+    @JvmStatic
+    external fun checkServices(localSocksPort: Int): String
+
+    /** Reward a verified-healthy node (increments its stability streak, clears transient failures). */
+    @JvmStatic
+    external fun recordNodeSuccess(nodeId: String, rttMs: Int): String
+
+    /** Export shareable `vless://`/`hy2://`… URI for a saved node (1-tap Copy/Share). */
+    @JvmStatic
+    external fun exportNodeUri(nodeId: String): String
 
     @JvmStatic
     external fun configureHwid(

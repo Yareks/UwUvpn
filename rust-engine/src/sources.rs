@@ -79,9 +79,9 @@ fn builtin_src(name: &str, url: &str, kind: &str, region_hint: &str) -> SubSourc
     }
 }
 
-/// 38 live-verified, actively auto-updated free sources (every GitHub URL includes Gcore/jsDelivr/Codeberg
-/// CDN failover): 7 dedicated Russian Mobile Whitelist (Минцифры SNI + VK/Yandex/CDN CIDR), 16 US/DE/Global
-/// Reality/XHTTP/SS2022/Trojan/Hysteria2 feeds, and 15 Russia-verified Telegram MTProto FakeTLS & SOCKS5 feeds.
+/// 96 live-verified, actively auto-updated free sources (every GitHub URL includes Gcore/jsDelivr/Codeberg
+/// CDN failover): 79 VPN feeds (including 7 dedicated Russian Mobile Whitelist — Минцифры SNI + VK/Yandex/CDN
+/// CIDR — plus US/DE/Global Reality/XHTTP/SS2022/Trojan/Hysteria2/VLESS feeds) and 17 Telegram MTProto/SOCKS5 feeds.
 pub fn default_sources() -> Vec<SubSource> {
     vec![
         // --- VPN: Белые списки РФ (Минцифры SNI + VK Cloud / Yandex Cloud / CDNvideo CIDR) ---
@@ -128,6 +128,24 @@ pub fn default_sources() -> Vec<SubSource> {
             "vpn",
             "DE",
         ),
+        builtin_src(
+            "Peasoft · NoMoreWalls (DE/US/EU Reality+Hy2)",
+            "https://raw.githubusercontent.com/peasoft/NoMoreWalls/master/list_raw.txt",
+            "vpn",
+            "DE",
+        ),
+        builtin_src(
+            "MatinGhanbari · Filtered VLESS/Reality (DE/US)",
+            "https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/main/subscriptions/filtered/subs/vless.txt",
+            "vpn",
+            "DE",
+        ),
+        builtin_src(
+            "MatinGhanbari · Filtered Hysteria2 (DE/US)",
+            "https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/main/subscriptions/filtered/subs/hysteria2.txt",
+            "vpn",
+            "DE",
+        ),
         // --- VPN: United States (US) Dedicated ---
         builtin_src(
             "0xRadikal · United States (Auto 15m)",
@@ -146,6 +164,85 @@ pub fn default_sources() -> Vec<SubSource> {
             "https://raw.githubusercontent.com/Argh94/V2RayAutoConfig/main/configs/USA.txt",
             "vpn",
             "US",
+        ),
+        builtin_src(
+            "Roosterkid · OpenProxyList (US/DE VLESS)",
+            "https://raw.githubusercontent.com/roosterkid/openproxylist/main/V2RAY_RAW.txt",
+            "vpn",
+            "US",
+        ),
+        builtin_src(
+            "Kwinshadow · VLESS Verified (DE/US/EU)",
+            "https://raw.githubusercontent.com/Kwinshadow/TelegramV2rayCollector/main/sublinks/vless.txt",
+            "vpn",
+            "US",
+        ),
+        builtin_src(
+            "Danialsamadi · VLESS Reality Pool (DE/US)",
+            "https://raw.githubusercontent.com/Danialsamadi/v2go/main/Splitted-By-Protocol/vless.txt",
+            "vpn",
+            "DE",
+        ),
+        // --- VPN: Extra European & Ad-Free YouTube Countries (NL, FI, GB, FR, SE, CH, AT, CZ, IT, ES, CA, MD) ---
+        builtin_src(
+            "Argh94 · Netherlands NL Pool",
+            "https://raw.githubusercontent.com/Argh94/V2RayAutoConfig/main/configs/Netherlands.txt",
+            "vpn",
+            "NL",
+        ),
+        builtin_src(
+            "Argh94 · Finland FI Pool",
+            "https://raw.githubusercontent.com/Argh94/V2RayAutoConfig/main/configs/Finland.txt",
+            "vpn",
+            "FI",
+        ),
+        builtin_src(
+            "Argh94 · United Kingdom GB Pool",
+            "https://raw.githubusercontent.com/Argh94/V2RayAutoConfig/main/configs/UK.txt",
+            "vpn",
+            "GB",
+        ),
+        builtin_src(
+            "Argh94 · Sweden SE Pool",
+            "https://raw.githubusercontent.com/Argh94/V2RayAutoConfig/main/configs/Sweden.txt",
+            "vpn",
+            "SE",
+        ),
+        builtin_src(
+            "Argh94 · Switzerland CH Pool",
+            "https://raw.githubusercontent.com/Argh94/V2RayAutoConfig/main/configs/Switzerland.txt",
+            "vpn",
+            "CH",
+        ),
+        builtin_src(
+            "Argh94 · Austria AT Pool",
+            "https://raw.githubusercontent.com/Argh94/V2RayAutoConfig/main/configs/Austria.txt",
+            "vpn",
+            "AT",
+        ),
+        builtin_src(
+            "SoliSpirit · Czechia CZ Pool",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Czechia.txt",
+            "vpn",
+            "CZ",
+        ),
+        builtin_src(
+            "SoliSpirit · Italy IT Pool",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Italy.txt",
+            "vpn",
+            "IT",
+        ),
+        builtin_src(
+            "SoliSpirit · Spain ES Pool",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Spain.txt",
+            "vpn",
+            "ES",
+        ),
+        builtin_src(
+            "SoliSpirit · Moldova MD (YT 0% Ads)",
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Moldova.txt",
+            "vpn",
+            "MD",
         ),
         // --- VPN: Multi-Region SS2022 / Trojan / Reality / XHTTP / Hysteria2 (Direct + MASQUE-Chain) ---
         builtin_src(
@@ -558,6 +655,12 @@ pub fn default_sources() -> Vec<SubSource> {
             "TG",
         ),
         builtin_src(
+            "ALIILAPRO · MTProto Fake-TLS Pool",
+            "https://raw.githubusercontent.com/ALIILAPRO/MTProtoProxy/main/mtproto.txt",
+            "tg",
+            "TG",
+        ),
+        builtin_src(
             "Monosans SOCKS5 (TG + Звонки)",
             "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt",
             "tg",
@@ -782,6 +885,70 @@ pub struct VerifiedVpnNode {
     pub outbound_json: serde_json::Value,
     pub verified_unix: u64,
     pub fail_count: u32,
+    /// Consecutive successful tunnel sessions & health checks (capped at 20) — rewards stable,
+    /// zero-drop servers over erratic ones!
+    #[serde(default)]
+    pub ok_streak: u16,
+    /// Unix timestamp of the most recent failure — prevents bouncing right back onto a flapping host!
+    #[serde(default)]
+    pub last_fail_unix: u64,
+}
+
+/// Returns `true` when a server remark explicitly declares a domestic Russian exit (`🇷🇺 Россия`,
+/// `🇷🇺 Москва`, `🇷🇺 СПб`, `Russia Moscow`) WITHOUT naming any foreign destination country or
+/// whitelist relay bridge. Domestic Russian exits defeat the purpose of a VPN (we are replacing a
+/// Russian IP!), whereas RU-entry -> DE/US/NL/FI relay bridges are kept and verified by real exit GeoIP!
+pub fn is_pure_russia_exit_remark(name: &str) -> bool {
+    let t = name.trim();
+    if t.is_empty() {
+        return false;
+    }
+    let low = t.to_lowercase();
+    let mentions_foreign = [
+        "🇩🇪", "🇺🇸", "🇳🇱", "🇫🇮", "🇬🇧", "🇫🇷", "🇸🇪", "🇳🇴", "🇩🇰", "🇨🇭", "🇦🇹", "🇵🇱", "🇨🇿",
+        "🇮🇹", "🇪🇸", "🇵🇹", "🇪🇪", "🇱🇻", "🇱🇹", "🇮🇪", "🇧🇪", "🇱🇺", "🇦🇱", "🇲🇩", "🇹🇷", "🇯🇵",
+        "🇸🇬", "🇨🇦", "🇰🇷", "🇭🇰", "🇰🇿", "🇦🇪", "🇦🇲", "🇭🇺", "🇷🇴", "🇧🇬",
+        "герман", "germany", "frankfurt", "франкфурт", "сша", "usa", "united states",
+        "нидерланд", "netherlands", "amsterdam", "амстердам", "финлянд", "finland", "helsinki",
+        "британ", "london", "франц", "france", "paris", "швец", "sweden", "польш", "poland",
+        "швейцар", "switzerland", "австри", "austria", "турци", "turkey", "япони", "japan",
+        "сингапур", "singapore", "канад", "canada", "албан", "albania", "молдов", "moldova",
+        "казах", "чехи", "итал", "испан", "латви", "эстон", "литв",
+    ]
+    .iter()
+    .any(|kw| t.contains(kw) || low.contains(kw));
+    if mentions_foreign {
+        return false;
+    }
+    // Keep genuine mobile whitelist bridges ("обход бс", "whitelist", "белые списки", "relay")
+    // so the live SOCKS prober checks their REAL exit country (keeps DE/US/NL/FI, drops RU!).
+    let is_wl_bridge = [
+        "бс", "белые списк", "белый спис", "whitelist", "white-list", "обход", "relay", "мост",
+        "bridge", "cascade", "каскад",
+    ]
+    .iter()
+    .any(|kw| low.contains(kw));
+    if is_wl_bridge {
+        return false;
+    }
+    [
+        "🇷🇺",
+        "россия",
+        "россии",
+        "russia",
+        "moscow",
+        "москва",
+        "санкт-петербург",
+        "петербург",
+        "spb ",
+        " spb",
+        "novosibirsk",
+        "новосибирск",
+        "ekaterinburg",
+        "екатеринбург",
+    ]
+    .iter()
+    .any(|kw| t.contains(kw) || low.contains(kw))
 }
 
 /// Try decoding a whole subscription body if it is Base64-encoded; otherwise return as-is.
@@ -1371,6 +1538,12 @@ pub async fn fetch_vpn_candidates(
                 let is_tier_a_wl = is_tier_a_whitelist_sni(&cand.sni);
                 if (is_wl_feed || is_wl_tag) && !is_rf_blocked_sni(&cand.sni) {
                     cand.whitelist_friendly = true;
+                }
+
+                // Never include pure domestic Russian exit servers in VPN pool (we are replacing a
+                // Russian IP!); genuine RU-entry whitelist relays exiting abroad are kept & verified!
+                if !cand.whitelist_friendly && is_pure_russia_exit_remark(&cand.name) {
+                    continue;
                 }
 
                 let ep_key = format!("{}:{}", cand.host.to_ascii_lowercase(), cand.port);

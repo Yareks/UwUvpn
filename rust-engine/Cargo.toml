@@ -1,8 +1,8 @@
 [package]
 name = "velox-engine"
-version = "1.6.0"
+version = "1.7.0"
 edition = "2021"
-description = "Ultra-lightweight Rust VPN orchestrator, dual-channel failover, Happ crypt1-5/AES-GCM parser, WARP/Opera provisioner, and Telegram MTProto/SOCKS5/WS engine"
+description = "Ultra-lightweight Rust VPN orchestrator v1.7: anti-drop dual-channel (same-country + DE/US reserve priority), zero-RU exit guard, live 12-service checker, Happ crypt1-5/AES-GCM/HWID, and Telegram MTProto/SOCKS5/WS engine"
 license = "MPL-2.0"
 
 [lib]

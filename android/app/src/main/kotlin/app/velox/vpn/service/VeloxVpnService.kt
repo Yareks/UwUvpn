@@ -593,7 +593,8 @@ class VeloxVpnService : XrayVpnService() {
             null
         } else {
             XrayStartupProbeOptions(
-                "http://cp.cloudflare.com/generate_204",
+                // HTTPS :443 only — HTTP :80 is dropped by many exits/DPI and caused false fails
+                "https://cp.cloudflare.com/generate_204",
                 5000L,
                 firstTag,
             )
@@ -685,9 +686,19 @@ class VeloxVpnService : XrayVpnService() {
             )
         }
 
+        val standbyTier = buildRes.optString("standbyTier", "")
         val status = buildString {
             append(proto)
-            if (dualActive) append(" · 2× резерв")
+            if (dualActive) {
+                append(
+                    when (standbyTier) {
+                        "same_country" -> " · 2× та же страна"
+                        "de_us" -> " · 2× резерв DE/US"
+                        "foreign" -> " · 2× зарубеж."
+                        else -> " · 2× резерв"
+                    }
+                )
+            }
             if (wlActive) append(" · БС РФ")
             if (ytZeroAds) {
                 append(" · YT 0%")
@@ -1352,6 +1363,11 @@ class VeloxVpnService : XrayVpnService() {
                 "WEB",
                 "Веб + DoH ОК: $host HTTP $webCode + DoH HTTP $dohCode (${rtt} мс, $ip $loc)"
             )
+            // Reward rock-solid nodes: bumps stability streak & smoothing RTT (reduces flapping)
+            val curId = currentState.activeNodeId
+            if (curId.isNotBlank()) {
+                runCatching { VeloxNative.recordNodeSuccess(curId, rtt) }
+            }
             if (currentState.phase == VpnPhase.CONNECTED) {
                 publishState(
                     currentState.copy(
@@ -1428,6 +1444,7 @@ class VeloxVpnService : XrayVpnService() {
             idlePowerSave = idlePowerSave,
             socksUser = sessionSocksUser,
             socksPass = sessionSocksPass,
+            customRulesJson = settings.customRulesJson(),
         )
     }
 

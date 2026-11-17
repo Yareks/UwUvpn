@@ -1,6 +1,75 @@
 {
   "vpn_nodes": [
     {
+      "id": "8f707f80712a63b0",
+      "name": "США (SJC)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "198.247.127.131",
+      "port": 443,
+      "sni": "addons.mozilla.org",
+      "exit_country": "US",
+      "exit_colo": "SJC",
+      "exit_ip": "198.247.127.131",
+      "rtt_ms": 145,
+      "kbps": 1563,
+      "passed_32kb": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": true,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": false,
+      "yt_country": "US",
+      "source_tier": 1,
+      "raw_uri": "vless://59548d2d-5d7c-4328-aa81-0d5614da0c1b@198.247.127.131:443?encryption=none&flow=xtls-rprx-vision&fp=firefox&pbk=vmHHRwA9ER6c8dfgtL-gh2HBMCvjySy1xLimqYpLiCI&security=reality&sni=addons.mozilla.org&type=tcp#US 🇺🇸 | @Raydikalx | 5B619D",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "198.247.127.131",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "flow": "xtls-rprx-vision",
+                  "id": "59548d2d-5d7c-4328-aa81-0d5614da0c1b"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "finalmask": {
+            "tcp": [
+              {
+                "settings": {
+                  "delay": "1-3",
+                  "length": "40-120",
+                  "maxSplit": 16,
+                  "packets": "tlshello"
+                },
+                "type": "fragment"
+              }
+            ]
+          },
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "firefox",
+            "publicKey": "vmHHRwA9ER6c8dfgtL-gh2HBMCvjySy1xLimqYpLiCI",
+            "serverName": "addons.mozilla.org",
+            "shortId": ""
+          },
+          "security": "reality"
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918156,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
       "id": "51ab34b53346bbaf",
       "name": "США (ORD)",
       "display_protocol": "VLESS Reality",
@@ -11,8 +80,8 @@
       "exit_country": "US",
       "exit_colo": "ORD",
       "exit_ip": "216.152.155.189",
-      "rtt_ms": 223,
-      "kbps": 1020,
+      "rtt_ms": 222,
+      "kbps": 1072,
       "passed_32kb": true,
       "whitelist_friendly": false,
       "fragment_enabled": false,
@@ -51,75 +120,24 @@
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909245,
-      "fail_count": 0
+      "verified_unix": 1794918156,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
-      "id": "87c4ff09c5615933",
-      "name": "США · WL (ORD)",
-      "display_protocol": "VLESS Reality",
-      "protocol": "vless",
-      "host": "84.32.54.237",
-      "port": 443,
-      "sni": "rly-gw-cfg.galioncc.com",
-      "exit_country": "US",
-      "exit_colo": "ORD",
-      "exit_ip": "84.32.34.40",
-      "rtt_ms": 251,
-      "kbps": 974,
-      "passed_32kb": true,
-      "whitelist_friendly": true,
-      "fragment_enabled": false,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": false,
-      "yt_country": "US",
-      "source_tier": 1,
-      "raw_uri": "vless://a30903dc-1bf0-4be5-8b1b-603a3a56211c@84.32.54.237:443?encryption=none&fp=firefox&pbk=drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ&security=reality&sid=868419504747f6de&sni=rly-gw-cfg.galioncc.com&type=tcp#%F0%9F%87%BA%F0%9F%87%B8%20United%20States%2C%20Chicago%20%7C%20%5BBL%5D",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "84.32.54.237",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "id": "a30903dc-1bf0-4be5-8b1b-603a3a56211c"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "network": "tcp",
-          "realitySettings": {
-            "fingerprint": "firefox",
-            "publicKey": "drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ",
-            "serverName": "rly-gw-cfg.galioncc.com",
-            "shortId": "868419504747f6de"
-          },
-          "security": "reality"
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909187,
-      "fail_count": 0
-    },
-    {
-      "id": "e3bf5f881406762d",
+      "id": "9ff73d1db0a5566e",
       "name": "США (EWR)",
       "display_protocol": "VLESS Reality",
       "protocol": "vless",
-      "host": "169.40.42.168",
+      "host": "169.40.42.89",
       "port": 443,
       "sni": "yahoo.com",
       "exit_country": "US",
       "exit_colo": "EWR",
-      "exit_ip": "45.144.112.55",
-      "rtt_ms": 313,
-      "kbps": 783,
+      "exit_ip": "185.195.57.175",
+      "rtt_ms": 304,
+      "kbps": 437,
       "passed_32kb": true,
       "whitelist_friendly": false,
       "fragment_enabled": false,
@@ -128,13 +146,13 @@
       "yt_ad_free": false,
       "yt_country": "US",
       "source_tier": 1,
-      "raw_uri": "vless://d65cc14c-f53f-4fe2-b262-97856601319c@169.40.42.168:443?flow=xtls-rprx-vision&fp=random&host=yahoo.com&pbk=e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg&security=reality&sid=c39cc7310a&sni=yahoo.com&type=tcp#US 🇺🇸 | @Raydikalx | 56CF99",
+      "raw_uri": "vless://d65cc14c-f53f-4fe2-b262-97856601319c@169.40.42.89:443?alpn=networld_vpn-channel%40.networld_vpn-channel%40.networld_vpn-channel%40.networld_vpn-channel%40.networld_vpn-channel%40.networld_vpn-channel%40.networld_vpn-&flow=xtls-rprx-vision&pbk=e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg&security=reality&sid=c39cc7310a&sni=yahoo.com&type=tcp#US 🇺🇸 | @Raydikalx | CB3E2D",
       "outbound_json": {
         "protocol": "vless",
         "settings": {
           "vnext": [
             {
-              "address": "169.40.42.168",
+              "address": "169.40.42.89",
               "port": 443,
               "users": [
                 {
@@ -149,73 +167,6 @@
         "streamSettings": {
           "network": "tcp",
           "realitySettings": {
-            "fingerprint": "random",
-            "publicKey": "e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg",
-            "serverName": "yahoo.com",
-            "shortId": "c39cc7310a"
-          },
-          "security": "reality"
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909250,
-      "fail_count": 0
-    },
-    {
-      "id": "377b7abb99c04f5a",
-      "name": "США (EWR)",
-      "display_protocol": "VLESS Reality",
-      "protocol": "vless",
-      "host": "169.40.42.35",
-      "port": 443,
-      "sni": "yahoo.com",
-      "exit_country": "US",
-      "exit_colo": "EWR",
-      "exit_ip": "185.195.57.173",
-      "rtt_ms": 369,
-      "kbps": 746,
-      "passed_32kb": true,
-      "whitelist_friendly": false,
-      "fragment_enabled": true,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": false,
-      "yt_country": "US",
-      "source_tier": 1,
-      "raw_uri": "vless://d65cc14c-f53f-4fe2-b262-97856601319c@169.40.42.35:443?flow=xtls-rprx-vision&fp=chrome&path=/+&pbk=e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg&security=reality&sid=c39cc7310a&sni=yahoo.com&type=tcp#US 🇺🇸 | @Raydikalx | E2D4AD",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "169.40.42.35",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "flow": "xtls-rprx-vision",
-                  "id": "d65cc14c-f53f-4fe2-b262-97856601319c"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "finalmask": {
-            "tcp": [
-              {
-                "settings": {
-                  "delay": "1-3",
-                  "length": "40-120",
-                  "maxSplit": 16,
-                  "packets": "tlshello"
-                },
-                "type": "fragment"
-              }
-            ]
-          },
-          "network": "tcp",
-          "realitySettings": {
             "fingerprint": "chrome",
             "publicKey": "e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg",
             "serverName": "yahoo.com",
@@ -225,75 +176,10 @@
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909242,
-      "fail_count": 0
-    },
-    {
-      "id": "f5662fd2f69657f1",
-      "name": "Япония (NRT)",
-      "display_protocol": "VLESS Reality",
-      "protocol": "vless",
-      "host": "31.76.91.98",
-      "port": 443,
-      "sni": "fuji.etherhub.cc",
-      "exit_country": "JP",
-      "exit_colo": "NRT",
-      "exit_ip": "31.76.91.98",
-      "rtt_ms": 379,
-      "kbps": 608,
-      "passed_32kb": true,
-      "whitelist_friendly": false,
-      "fragment_enabled": true,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": false,
-      "yt_country": "DE",
-      "source_tier": 1,
-      "raw_uri": "vless://7072eeba-94fd-4fb3-92f2-a4506dd84cd8@31.76.91.98:443?security=reality&encryption=none&pbk=ejx56dFtS4LK_Th6HSLFFdm7v7zqRpv8KfjrWAw4Sjg&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=fuji.etherhub.cc&sid=bd6f67b6b2152b45#🔥Join+Telegram:@Farah_VPN🟣",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "31.76.91.98",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "flow": "xtls-rprx-vision",
-                  "id": "7072eeba-94fd-4fb3-92f2-a4506dd84cd8"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "finalmask": {
-            "tcp": [
-              {
-                "settings": {
-                  "delay": "1-3",
-                  "length": "40-120",
-                  "maxSplit": 16,
-                  "packets": "tlshello"
-                },
-                "type": "fragment"
-              }
-            ]
-          },
-          "network": "tcp",
-          "realitySettings": {
-            "fingerprint": "chrome",
-            "publicKey": "ejx56dFtS4LK_Th6HSLFFdm7v7zqRpv8KfjrWAw4Sjg",
-            "serverName": "fuji.etherhub.cc",
-            "shortId": "bd6f67b6b2152b45"
-          },
-          "security": "reality"
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909257,
-      "fail_count": 0
+      "verified_unix": 1794918204,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
       "id": "7192a1bb64b19e76",
@@ -306,17 +192,17 @@
       "exit_country": "US",
       "exit_colo": "EWR",
       "exit_ip": "185.195.57.168",
-      "rtt_ms": 433,
-      "kbps": 593,
+      "rtt_ms": 310,
+      "kbps": 677,
       "passed_32kb": true,
       "whitelist_friendly": false,
-      "fragment_enabled": false,
+      "fragment_enabled": true,
       "via_warp": false,
       "device_verified": false,
       "yt_ad_free": false,
       "yt_country": "US",
       "source_tier": 1,
-      "raw_uri": "vless://d65cc14c-f53f-4fe2-b262-97856601319c@169.40.42.90:443?flow=xtls-rprx-vision&fp=edge&host=yahoo.com&pbk=e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg&security=reality&sid=c39cc7310a&sni=yahoo.com&type=tcp#US 🇺🇸 | @Raydikalx | 80DAC5",
+      "raw_uri": "vless://d65cc14c-f53f-4fe2-b262-97856601319c@169.40.42.90:443?flow=xtls-rprx-vision&fp=chrome&pbk=e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg&security=reality&sid=c39cc7310a&sni=yahoo.com&type=tcp#US 🇺🇸 | @Raydikalx | DA2E22",
       "outbound_json": {
         "protocol": "vless",
         "settings": {
@@ -335,9 +221,22 @@
           ]
         },
         "streamSettings": {
+          "finalmask": {
+            "tcp": [
+              {
+                "settings": {
+                  "delay": "1-3",
+                  "length": "40-120",
+                  "maxSplit": 16,
+                  "packets": "tlshello"
+                },
+                "type": "fragment"
+              }
+            ]
+          },
           "network": "tcp",
           "realitySettings": {
-            "fingerprint": "edge",
+            "fingerprint": "chrome",
             "publicKey": "e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg",
             "serverName": "yahoo.com",
             "shortId": "c39cc7310a"
@@ -346,116 +245,157 @@
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909245,
-      "fail_count": 0
+      "verified_unix": 1794918156,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
-      "id": "de3150f44cbdfdbb",
-      "name": "Германия · WL · YT 0% (ARN)",
-      "display_protocol": "VLESS XHTTP TLS",
+      "id": "dc6075c8c4fcdff1",
+      "name": "США (EWR)",
+      "display_protocol": "VLESS Reality",
       "protocol": "vless",
-      "host": "104.18.139.67",
+      "host": "169.40.42.231",
       "port": 443,
-      "sni": "norway.xn--nlqaa425dbaab446bbabd698meae.online.",
-      "exit_country": "DE",
-      "exit_colo": "ARN",
-      "exit_ip": "144.31.217.18",
-      "rtt_ms": 522,
-      "kbps": 309,
+      "sni": "yahoo.com",
+      "exit_country": "US",
+      "exit_colo": "EWR",
+      "exit_ip": "185.195.57.177",
+      "rtt_ms": 313,
+      "kbps": 679,
       "passed_32kb": true,
-      "whitelist_friendly": true,
-      "fragment_enabled": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": false,
       "via_warp": false,
       "device_verified": false,
-      "yt_ad_free": true,
-      "yt_country": "RU",
+      "yt_ad_free": false,
+      "yt_country": "US",
       "source_tier": 1,
-      "raw_uri": "vless://0280c276-641b-49af-b699-4931c30ac137@chess.com:443?pcs=c826d82c6503682e8aec94ef5169a97f588a35cb667c096aedd9ba01a54df9f0&alpn=h2&fp=firefox&type=xhttp&sni=norway.xn--nlqaa425dbaab446bbabd698meae.online.&mode=auto&path=%2Fapi&security=tls&encryption=none&extra=%7B%22mode%22%3A%22auto%22%7D&insecure=0&host=norway.xn--nlqaa425dbaab446bbabd698meae.online&allowInsecure=0#%F0%9F%87%B3%F0%9F%87%B4%20Norway%2C%20Oslo%20%7C%20%5BBL%5D",
+      "raw_uri": "vless://d65cc14c-f53f-4fe2-b262-97856601319c@169.40.42.231:443?flow=xtls-rprx-vision&fp=ios&host=yahoo.com&path=%2F&pbk=e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg&security=reality&sid=c39cc7310a&sni=yahoo.com&type=tcp#US 🇺🇸 | @Raydikalx | 903458",
       "outbound_json": {
         "protocol": "vless",
         "settings": {
           "vnext": [
             {
-              "address": "104.18.139.67",
+              "address": "169.40.42.231",
               "port": 443,
               "users": [
                 {
                   "encryption": "none",
-                  "id": "0280c276-641b-49af-b699-4931c30ac137"
+                  "flow": "xtls-rprx-vision",
+                  "id": "d65cc14c-f53f-4fe2-b262-97856601319c"
                 }
               ]
             }
           ]
         },
         "streamSettings": {
-          "finalmask": {
-            "tcp": [
-              {
-                "settings": {
-                  "delay": "1-3",
-                  "length": "40-120",
-                  "maxSplit": 16,
-                  "packets": "tlshello"
-                },
-                "type": "fragment"
-              }
-            ]
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "ios",
+            "publicKey": "e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg",
+            "serverName": "yahoo.com",
+            "shortId": "c39cc7310a"
           },
-          "network": "xhttp",
-          "security": "tls",
-          "tlsSettings": {
-            "alpn": [
-              "h2"
-            ],
-            "fingerprint": "firefox",
-            "pinnedPeerCertSha256": "c826d82c6503682e8aec94ef5169a97f588a35cb667c096aedd9ba01a54df9f0",
-            "serverName": "norway.xn--nlqaa425dbaab446bbabd698meae.online."
-          },
-          "xhttpSettings": {
-            "host": "norway.xn--nlqaa425dbaab446bbabd698meae.online",
-            "mode": "auto",
-            "path": "/api"
-          }
+          "security": "reality"
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909189,
-      "fail_count": 0
+      "verified_unix": 1794918203,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
-      "id": "2b1f3f428190775d",
-      "name": "Нидерланды · WL · YT 0% (AMS)",
-      "display_protocol": "VLESS TLS",
+      "id": "0ee1c30f4bbd41fd",
+      "name": "США (EWR)",
+      "display_protocol": "VLESS Reality",
       "protocol": "vless",
-      "host": "84.32.96.120",
+      "host": "45.144.112.55",
       "port": 443,
-      "sni": "app.streamru8.net",
-      "exit_country": "NL",
-      "exit_colo": "AMS",
-      "exit_ip": "84.32.96.64",
-      "rtt_ms": 571,
-      "kbps": 409,
+      "sni": "yahoo.com",
+      "exit_country": "US",
+      "exit_colo": "EWR",
+      "exit_ip": "45.144.112.55",
+      "rtt_ms": 343,
+      "kbps": 527,
       "passed_32kb": true,
-      "whitelist_friendly": true,
-      "fragment_enabled": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": false,
       "via_warp": false,
       "device_verified": false,
-      "yt_ad_free": true,
-      "yt_country": "RU",
+      "yt_ad_free": false,
+      "yt_country": "US",
       "source_tier": 1,
-      "raw_uri": "vless://2232d904-8e6a-4202-8240-6efd8aec02e9@app.streamru8.net:443?type=tcp&security=tls&flow=xtls-rprx-vision&fp=chrome&sni=app.streamru8.net#%F0%9F%87%B3%F0%9F%87%B1%20The%20Netherlands%2C%20Amsterdam%20%7C%20%5BBL%5D",
+      "raw_uri": "vless://d65cc14c-f53f-4fe2-b262-97856601319c@45.144.112.55:443?security=reality&encryption=none&pbk=e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg&headerType=none&fp=firefox&type=tcp&flow=xtls-rprx-vision&sni=yahoo.com&sid=c39cc7310a#⚡ b2n.ir/v2ray-configs | 133",
       "outbound_json": {
         "protocol": "vless",
         "settings": {
           "vnext": [
             {
-              "address": "84.32.96.120",
+              "address": "45.144.112.55",
               "port": 443,
               "users": [
                 {
                   "encryption": "none",
                   "flow": "xtls-rprx-vision",
-                  "id": "2232d904-8e6a-4202-8240-6efd8aec02e9"
+                  "id": "d65cc14c-f53f-4fe2-b262-97856601319c"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "firefox",
+            "publicKey": "e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg",
+            "serverName": "yahoo.com",
+            "shortId": "c39cc7310a"
+          },
+          "security": "reality"
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918192,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "9a3de52a61ec7b6c",
+      "name": "США (EWR)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "169.40.42.163",
+      "port": 443,
+      "sni": "yahoo.com",
+      "exit_country": "US",
+      "exit_colo": "EWR",
+      "exit_ip": "162.120.69.88",
+      "rtt_ms": 362,
+      "kbps": 596,
+      "passed_32kb": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": true,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": false,
+      "yt_country": "US",
+      "source_tier": 1,
+      "raw_uri": "vless://d65cc14c-f53f-4fe2-b262-97856601319c@169.40.42.163:443?flow=xtls-rprx-vision&fp=random&host=yahoo.com&pbk=e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg&security=reality&sid=c39cc7310a&sni=yahoo.com&type=tcp#US 🇺🇸 | @Raydikalx | 380881",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "169.40.42.163",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "flow": "xtls-rprx-vision",
+                  "id": "d65cc14c-f53f-4fe2-b262-97856601319c"
                 }
               ]
             }
@@ -476,51 +416,446 @@
             ]
           },
           "network": "tcp",
-          "security": "tls",
-          "tlsSettings": {
-            "fingerprint": "chrome",
-            "serverName": "app.streamru8.net"
-          }
+          "realitySettings": {
+            "fingerprint": "random",
+            "publicKey": "e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg",
+            "serverName": "yahoo.com",
+            "shortId": "c39cc7310a"
+          },
+          "security": "reality"
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909190,
-      "fail_count": 0
+      "verified_unix": 1794918207,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
-      "id": "7c851b111fe908d4",
-      "name": "Нидерланды · WL (AMS)",
+      "id": "d2b141b03d2f7947",
+      "name": "США (EWR)",
       "display_protocol": "VLESS Reality",
       "protocol": "vless",
-      "host": "5.35.44.218",
-      "port": 8443,
-      "sni": "nl17.blog-forme.ru",
-      "exit_country": "NL",
-      "exit_colo": "AMS",
-      "exit_ip": "5.35.44.218",
-      "rtt_ms": 580,
-      "kbps": 398,
+      "host": "169.40.42.74",
+      "port": 443,
+      "sni": "yahoo.com",
+      "exit_country": "US",
+      "exit_colo": "EWR",
+      "exit_ip": "185.195.57.174",
+      "rtt_ms": 375,
+      "kbps": 746,
+      "passed_32kb": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": false,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": false,
+      "yt_country": "US",
+      "source_tier": 1,
+      "raw_uri": "vless://d65cc14c-f53f-4fe2-b262-97856601319c@169.40.42.74:443?flow=xtls-rprx-vision&fp=ios&host=yahoo.com&path=%2F&pbk=e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg&security=reality&sid=c39cc7310a&sni=yahoo.com&type=tcp#US 🇺🇸 | @Raydikalx | 5142CA",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "169.40.42.74",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "flow": "xtls-rprx-vision",
+                  "id": "d65cc14c-f53f-4fe2-b262-97856601319c"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "ios",
+            "publicKey": "e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg",
+            "serverName": "yahoo.com",
+            "shortId": "c39cc7310a"
+          },
+          "security": "reality"
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918203,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "f5662fd2f69657f1",
+      "name": "Япония (NRT)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "31.76.91.98",
+      "port": 443,
+      "sni": "fuji.etherhub.cc",
+      "exit_country": "JP",
+      "exit_colo": "NRT",
+      "exit_ip": "31.76.91.98",
+      "rtt_ms": 376,
+      "kbps": 605,
+      "passed_32kb": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": false,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": false,
+      "yt_country": "DE",
+      "source_tier": 1,
+      "raw_uri": "vless://7072eeba-94fd-4fb3-92f2-a4506dd84cd8@31.76.91.98:443?security=reality&encryption=none&pbk=ejx56dFtS4LK_Th6HSLFFdm7v7zqRpv8KfjrWAw4Sjg&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=fuji.etherhub.cc&sid=bd6f67b6b2152b45#JP 🇯🇵 | @Raydikalx | 890048",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "31.76.91.98",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "flow": "xtls-rprx-vision",
+                  "id": "7072eeba-94fd-4fb3-92f2-a4506dd84cd8"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "chrome",
+            "publicKey": "ejx56dFtS4LK_Th6HSLFFdm7v7zqRpv8KfjrWAw4Sjg",
+            "serverName": "fuji.etherhub.cc",
+            "shortId": "bd6f67b6b2152b45"
+          },
+          "security": "reality"
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918238,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "653d7bb5fc0c9d9e",
+      "name": "США (EWR)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "169.40.42.202",
+      "port": 443,
+      "sni": "yahoo.com",
+      "exit_country": "US",
+      "exit_colo": "EWR",
+      "exit_ip": "45.144.112.54",
+      "rtt_ms": 393,
+      "kbps": 533,
+      "passed_32kb": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": false,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": false,
+      "yt_country": "US",
+      "source_tier": 1,
+      "raw_uri": "vless://d65cc14c-f53f-4fe2-b262-97856601319c@169.40.42.202:443?flow=xtls-rprx-vision&fp=chrome&path=%2F&pbk=e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg&security=reality&sid=c39cc7310a&sni=yahoo.com&type=tcp#US 🇺🇸 | @Raydikalx | B93F14",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "169.40.42.202",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "flow": "xtls-rprx-vision",
+                  "id": "d65cc14c-f53f-4fe2-b262-97856601319c"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "chrome",
+            "publicKey": "e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg",
+            "serverName": "yahoo.com",
+            "shortId": "c39cc7310a"
+          },
+          "security": "reality"
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918204,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "41e1d1009ceeb5a7",
+      "name": "США (ATL)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "23.129.180.171",
+      "port": 443,
+      "sni": "us5.gofizzin.com",
+      "exit_country": "US",
+      "exit_colo": "ATL",
+      "exit_ip": "136.148.76.102",
+      "rtt_ms": 468,
+      "kbps": 615,
+      "passed_32kb": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": false,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": false,
+      "yt_country": "US",
+      "source_tier": 1,
+      "raw_uri": "vless://8197b9b9-8945-460f-99c9-325ef8a8a7c3@23.129.180.171:443?&security=reality&flow=xtls-rprx-vision&pbk=tKA5ivaRbvqJ9RcSgp1ZtcCNfHAAuhWfve3tjMXse2w&sid=678ce913b8266e&fp=edge&sni=us5.gofizzin.com&type=tcp&headerType=none&host=us5.gofizzin.com&path=%2F#%F0%9F%87%BA%F0%9F%87%B8%20%E7%BE%8E%E5%9B%BD%20%7C%20USA",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "23.129.180.171",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "flow": "xtls-rprx-vision",
+                  "id": "8197b9b9-8945-460f-99c9-325ef8a8a7c3"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "edge",
+            "publicKey": "tKA5ivaRbvqJ9RcSgp1ZtcCNfHAAuhWfve3tjMXse2w",
+            "serverName": "us5.gofizzin.com",
+            "shortId": "678ce913b8266e"
+          },
+          "security": "reality"
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918169,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "e5806ac6a0e64642",
+      "name": "TW (TPE)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "85.237.207.221",
+      "port": 443,
+      "sni": "dl.google.com",
+      "exit_country": "TW",
+      "exit_colo": "TPE",
+      "exit_ip": "85.237.207.221",
+      "rtt_ms": 520,
+      "kbps": 346,
+      "passed_32kb": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": false,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": false,
+      "yt_country": "US",
+      "source_tier": 1,
+      "raw_uri": "vless://b59bcb5b-5150-4c6b-9227-681886197014@85.237.207.221:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=dl.google.com&fp=chrome&pbk=lJz7AGWUC-ZTEIJaU5y1GRrROWJ9J_VzQRyrYPmOygs&sid=fd2fa5e06670120b&type=tcp&headerType=none#v2go%20%7C%20%F0%9F%87%B9%F0%9F%87%BC%20TW%20%7C%20VLESS%20%7C%20456",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "85.237.207.221",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "flow": "xtls-rprx-vision",
+                  "id": "b59bcb5b-5150-4c6b-9227-681886197014"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "chrome",
+            "publicKey": "lJz7AGWUC-ZTEIJaU5y1GRrROWJ9J_VzQRyrYPmOygs",
+            "serverName": "dl.google.com",
+            "shortId": "fd2fa5e06670120b"
+          },
+          "security": "reality"
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918194,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "2cb6a301b611fcd6",
+      "name": "Япония (NRT)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "103.75.118.228",
+      "port": 11452,
+      "sni": "www.apple.com",
+      "exit_country": "JP",
+      "exit_colo": "NRT",
+      "exit_ip": "103.75.118.228",
+      "rtt_ms": 595,
+      "kbps": 295,
+      "passed_32kb": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": false,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": false,
+      "yt_country": "",
+      "source_tier": 1,
+      "raw_uri": "vless://814bd064-544d-4255-a070-5705c03f6da9@103.75.118.228:11452?flow=xtls-rprx-vision&fp=chrome&path=%2F&pbk=k2hPp0tTW0Da-HK94wYpSCLbuK44LfGqC2MSJIM1Ti0&security=reality&sid=48050fab&sni=www.apple.com&type=tcp#JP 🇯🇵 | @Raydikalx | 419490",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "103.75.118.228",
+              "port": 11452,
+              "users": [
+                {
+                  "encryption": "none",
+                  "flow": "xtls-rprx-vision",
+                  "id": "814bd064-544d-4255-a070-5705c03f6da9"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "chrome",
+            "publicKey": "k2hPp0tTW0Da-HK94wYpSCLbuK44LfGqC2MSJIM1Ti0",
+            "serverName": "www.apple.com",
+            "shortId": "48050fab"
+          },
+          "security": "reality"
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918239,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "e9792c72ad9f3128",
+      "name": "Германия · WL (FRA)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "132.243.222.128",
+      "port": 443,
+      "sni": "cdnjs.com",
+      "exit_country": "DE",
+      "exit_colo": "FRA",
+      "exit_ip": "132.243.222.128",
+      "rtt_ms": 600,
+      "kbps": 107,
+      "passed_32kb": true,
+      "whitelist_friendly": true,
+      "fragment_enabled": false,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": false,
+      "yt_country": "",
+      "source_tier": 1,
+      "raw_uri": "vless://7d63243c-983e-44db-a1b8-13dc3fd6f7a2@132.243.222.128:443?encryption=none&flow=xtls-rprx-vision&fp=firefox&pbk=mg2MoLpb8B51aZiko_nW2SBRoaudv-O6HLHx8VYP7Do&security=reality&sni=cdnjs.com&type=tcp#%F0%9F%87%A9%F0%9F%87%AA%20Germany%2C%20Frankfurt%20am%20Main%20%7C%20%5BBL%5D",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "132.243.222.128",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "flow": "xtls-rprx-vision",
+                  "id": "7d63243c-983e-44db-a1b8-13dc3fd6f7a2"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "firefox",
+            "publicKey": "mg2MoLpb8B51aZiko_nW2SBRoaudv-O6HLHx8VYP7Do",
+            "serverName": "cdnjs.com",
+            "shortId": ""
+          },
+          "security": "reality"
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918149,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "9ee86a60eeb4ee9f",
+      "name": "Германия · WL (FRA)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "88.216.211.36",
+      "port": 443,
+      "sni": "de8.galioncc.com",
+      "exit_country": "DE",
+      "exit_colo": "FRA",
+      "exit_ip": "84.32.98.235",
+      "rtt_ms": 617,
+      "kbps": 402,
       "passed_32kb": true,
       "whitelist_friendly": true,
       "fragment_enabled": true,
       "via_warp": false,
       "device_verified": false,
       "yt_ad_free": false,
-      "yt_country": "NL",
+      "yt_country": "DE",
       "source_tier": 1,
-      "raw_uri": "vless://549766c3-fa5f-471e-8031-ffc1f8d5064f@5.35.44.218:8443?security=reality&encryption=none&pbk=bxCIwojWO_edyWgi_QS-BOEnbX-prYu5B1hN_7Skgnc&host=%2F%3FTelegram---PLANB_NET---PLANB_NET---PLANB_NET---PLANB_NET&headerType=none&fp=firefox&type=tcp&flow=xtls-rprx-vision&sni=nl17.blog-forme.ru&sid=b6efdae4d829da97#REALITY|NL🇳🇱",
+      "raw_uri": "vless://a30903dc-1bf0-4be5-8b1b-603a3a56211c@88.216.211.36:443?type=tcp&security=reality&fp=firefox&pbk=drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ&sid=c4e7a1902b8d6f35&sni=de8.galioncc.com&host=/?telegram@iranping24@iranping24@iranping24---@iranping24/#%F0%9F%87%A9%F0%9F%87%AA%20Germany%2C%20Frankfurt%20am%20Main%20%7C%20%5BBL%5D",
       "outbound_json": {
         "protocol": "vless",
         "settings": {
           "vnext": [
             {
-              "address": "5.35.44.218",
-              "port": 8443,
+              "address": "88.216.211.36",
+              "port": 443,
               "users": [
                 {
                   "encryption": "none",
-                  "flow": "xtls-rprx-vision",
-                  "id": "549766c3-fa5f-471e-8031-ffc1f8d5064f"
+                  "id": "a30903dc-1bf0-4be5-8b1b-603a3a56211c"
                 }
               ]
             }
@@ -543,81 +878,18 @@
           "network": "tcp",
           "realitySettings": {
             "fingerprint": "firefox",
-            "publicKey": "bxCIwojWO_edyWgi_QS-BOEnbX-prYu5B1hN_7Skgnc",
-            "serverName": "nl17.blog-forme.ru",
-            "shortId": "b6efdae4d829da97"
+            "publicKey": "drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ",
+            "serverName": "de8.galioncc.com",
+            "shortId": "c4e7a1902b8d6f35"
           },
           "security": "reality"
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909200,
-      "fail_count": 0
-    },
-    {
-      "id": "cbea91b057aee0a4",
-      "name": "Германия · WL (FRA)",
-      "display_protocol": "VLESS TLS",
-      "protocol": "vless",
-      "host": "84.32.98.212",
-      "port": 443,
-      "sni": "app.streamru4.net",
-      "exit_country": "DE",
-      "exit_colo": "FRA",
-      "exit_ip": "88.216.36.75",
-      "rtt_ms": 605,
-      "kbps": 366,
-      "passed_32kb": true,
-      "whitelist_friendly": true,
-      "fragment_enabled": true,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": false,
-      "yt_country": "DE",
-      "source_tier": 1,
-      "raw_uri": "vless://2232d904-8e6a-4202-8240-6efd8aec02e9@app.streamru4.net:443?encryption=none&flow=xtls-rprx-vision&headerType=none&security=tls&sni=app.streamru4.net&type=tcp&fp=edge#%F0%9F%87%A9%F0%9F%87%AA%20Germany%2C%20Frankfurt%20am%20Main%20%7C%20%5BBL%5D",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "84.32.98.212",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "flow": "xtls-rprx-vision",
-                  "id": "2232d904-8e6a-4202-8240-6efd8aec02e9"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "finalmask": {
-            "tcp": [
-              {
-                "settings": {
-                  "delay": "1-3",
-                  "length": "40-120",
-                  "maxSplit": 16,
-                  "packets": "tlshello"
-                },
-                "type": "fragment"
-              }
-            ]
-          },
-          "network": "tcp",
-          "security": "tls",
-          "tlsSettings": {
-            "fingerprint": "edge",
-            "serverName": "app.streamru4.net"
-          }
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909190,
-      "fail_count": 0
+      "verified_unix": 1794918147,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
       "id": "f561e65e0a5dfcc4",
@@ -631,7 +903,7 @@
       "exit_colo": "FRA",
       "exit_ip": "87.120.92.186",
       "rtt_ms": 619,
-      "kbps": 623,
+      "kbps": 274,
       "passed_32kb": true,
       "whitelist_friendly": true,
       "fragment_enabled": false,
@@ -682,43 +954,45 @@
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909178,
-      "fail_count": 0
+      "verified_unix": 1794918136,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
-      "id": "d08eb3b7dc3f9a6f",
-      "name": "США (EWR)",
+      "id": "b6b20650b4ddd442",
+      "name": "Финляндия (HEL)",
       "display_protocol": "VLESS Reality",
       "protocol": "vless",
-      "host": "169.40.42.229",
-      "port": 443,
-      "sni": "yahoo.com",
-      "exit_country": "US",
-      "exit_colo": "EWR",
-      "exit_ip": "162.120.69.84",
-      "rtt_ms": 672,
-      "kbps": 752,
+      "host": "141.227.170.220",
+      "port": 8443,
+      "sni": "apple.com",
+      "exit_country": "FI",
+      "exit_colo": "HEL",
+      "exit_ip": "141.227.170.220",
+      "rtt_ms": 671,
+      "kbps": 261,
       "passed_32kb": true,
       "whitelist_friendly": false,
       "fragment_enabled": false,
       "via_warp": false,
       "device_verified": false,
       "yt_ad_free": false,
-      "yt_country": "US",
+      "yt_country": "FR",
       "source_tier": 1,
-      "raw_uri": "vless://d65cc14c-f53f-4fe2-b262-97856601319c@169.40.42.229:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=yahoo.com&fp=ios&pbk=e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg&sid=c39cc7310a&type=tcp&headerType=none#🇺🇸[openproxylist.com] vless-US",
+      "raw_uri": "vless://6c077993-952c-4318-9e93-89056a207a9b@141.227.170.220:8443?security=reality&encryption=none&pbk=SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc&headerType=none&fp=firefox&type=tcp&flow=xtls-rprx-vision&sni=apple.com&sid=6ba85179e30d4fc2#FI 🇫🇮 | @Raydikalx | 184B76",
       "outbound_json": {
         "protocol": "vless",
         "settings": {
           "vnext": [
             {
-              "address": "169.40.42.229",
-              "port": 443,
+              "address": "141.227.170.220",
+              "port": 8443,
               "users": [
                 {
                   "encryption": "none",
                   "flow": "xtls-rprx-vision",
-                  "id": "d65cc14c-f53f-4fe2-b262-97856601319c"
+                  "id": "6c077993-952c-4318-9e93-89056a207a9b"
                 }
               ]
             }
@@ -727,17 +1001,19 @@
         "streamSettings": {
           "network": "tcp",
           "realitySettings": {
-            "fingerprint": "ios",
-            "publicKey": "e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg",
-            "serverName": "yahoo.com",
-            "shortId": "c39cc7310a"
+            "fingerprint": "firefox",
+            "publicKey": "SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc",
+            "serverName": "apple.com",
+            "shortId": "6ba85179e30d4fc2"
           },
           "security": "reality"
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909278,
-      "fail_count": 0
+      "verified_unix": 1794918171,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
       "id": "8f54c796e9f669b4",
@@ -750,7 +1026,7 @@
       "exit_country": "NL",
       "exit_colo": "AMS",
       "exit_ip": "87.199.205.28",
-      "rtt_ms": 673,
+      "rtt_ms": 706,
       "kbps": 320,
       "passed_32kb": true,
       "whitelist_friendly": true,
@@ -790,116 +1066,10 @@
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909179,
-      "fail_count": 0
-    },
-    {
-      "id": "f55f3de5ad2a1386",
-      "name": "Британия · WL · YT 0% (LHR)",
-      "display_protocol": "VLESS Reality",
-      "protocol": "vless",
-      "host": "138.124.125.193",
-      "port": 10444,
-      "sni": "ads.x5.ru",
-      "exit_country": "GB",
-      "exit_colo": "LHR",
-      "exit_ip": "138.124.125.193",
-      "rtt_ms": 676,
-      "kbps": 296,
-      "passed_32kb": true,
-      "whitelist_friendly": true,
-      "fragment_enabled": false,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": true,
-      "yt_country": "RU",
-      "source_tier": 1,
-      "raw_uri": "vless://e57ce64d-5a1a-4a90-96df-9e1bd3ad26e4@138.124.125.193:10444?&security=reality&flow=xtls-rprx-vision&pbk=0oTkcqwLTUNLnSOP-VUWErmy6usAIg-biBE6ioZO-Vo&sid=8debcf36f1cc69ff&fp=chrome&sni=ads.x5.ru&type=tcp&headerType=none&path=%2F#GB 🇬🇧 | @Raydikalx | 890C6E",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "138.124.125.193",
-              "port": 10444,
-              "users": [
-                {
-                  "encryption": "none",
-                  "flow": "xtls-rprx-vision",
-                  "id": "e57ce64d-5a1a-4a90-96df-9e1bd3ad26e4"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "network": "tcp",
-          "realitySettings": {
-            "fingerprint": "chrome",
-            "publicKey": "0oTkcqwLTUNLnSOP-VUWErmy6usAIg-biBE6ioZO-Vo",
-            "serverName": "ads.x5.ru",
-            "shortId": "8debcf36f1cc69ff"
-          },
-          "security": "reality"
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909256,
-      "fail_count": 0
-    },
-    {
-      "id": "c89bc7c01de9d0fc",
-      "name": "Финляндия · YT 0% [RU] (HEL)",
-      "display_protocol": "VLESS Reality",
-      "protocol": "vless",
-      "host": "85.192.49.126",
-      "port": 443,
-      "sni": "fi3.gofizzin.com",
-      "exit_country": "FI",
-      "exit_colo": "HEL",
-      "exit_ip": "85.192.49.126",
-      "rtt_ms": 689,
-      "kbps": 349,
-      "passed_32kb": true,
-      "whitelist_friendly": false,
-      "fragment_enabled": false,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": true,
-      "yt_country": "RU",
-      "source_tier": 1,
-      "raw_uri": "vless://8197b9b9-8945-460f-99c9-325ef8a8a7c3@85.192.49.126:443?encryption=none&flow=xtls-rprx-vision&fp=chrome&pbk=ATdIZVxBUo5bVQJtcoWBU1k8qlHdNniJ2gF1iDc8rEQ&security=reality&sid=76efb045&sni=fi3.gofizzin.com&type=tcp#FI 🇫🇮 | @Raydikalx | 004A71",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "85.192.49.126",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "flow": "xtls-rprx-vision",
-                  "id": "8197b9b9-8945-460f-99c9-325ef8a8a7c3"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "network": "tcp",
-          "realitySettings": {
-            "fingerprint": "chrome",
-            "publicKey": "ATdIZVxBUo5bVQJtcoWBU1k8qlHdNniJ2gF1iDc8rEQ",
-            "serverName": "fi3.gofizzin.com",
-            "shortId": "76efb045"
-          },
-          "security": "reality"
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909209,
-      "fail_count": 0
+      "verified_unix": 1794918157,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
       "id": "c3ff2d084a3bef75",
@@ -912,17 +1082,17 @@
       "exit_country": "DE",
       "exit_colo": "FRA",
       "exit_ip": "64.188.91.39",
-      "rtt_ms": 692,
-      "kbps": 337,
+      "rtt_ms": 714,
+      "kbps": 348,
       "passed_32kb": true,
       "whitelist_friendly": true,
-      "fragment_enabled": false,
+      "fragment_enabled": true,
       "via_warp": false,
       "device_verified": false,
       "yt_ad_free": false,
       "yt_country": "DE",
       "source_tier": 1,
-      "raw_uri": "vless://fa937345-6d3e-4ff4-8127-1a836987a0db@195.63.128.21:2443?encryption=none&flow=xtls-rprx-vision&fp=&pbk=q_MJ5Zo2vcnePWq3KY653QUPX8mNSvapLpqXU4NuPho&security=reality&sid=464db718e17e4107&sni=germany.cloudhouse1.ru&type=tcp#REALITY|NL🇳🇱",
+      "raw_uri": "vless://fa937345-6d3e-4ff4-8127-1a836987a0db@195.63.128.21:2443?encryption=none&flow=xtls-rprx-vision&fp=&pbk=q_MJ5Zo2vcnePWq3KY653QUPX8mNSvapLpqXU4NuPho&security=reality&sid=464db718e17e4107&sni=germany.cloudhouse1.ru&type=tcp#v2go%20%7C%20%F0%9F%87%A9%F0%9F%87%AA%20DE%20%7C%20VLESS%20%7C%20501",
       "outbound_json": {
         "protocol": "vless",
         "settings": {
@@ -935,271 +1105,6 @@
                   "encryption": "none",
                   "flow": "xtls-rprx-vision",
                   "id": "fa937345-6d3e-4ff4-8127-1a836987a0db"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "network": "tcp",
-          "realitySettings": {
-            "fingerprint": "chrome",
-            "publicKey": "q_MJ5Zo2vcnePWq3KY653QUPX8mNSvapLpqXU4NuPho",
-            "serverName": "germany.cloudhouse1.ru",
-            "shortId": "464db718e17e4107"
-          },
-          "security": "reality"
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909218,
-      "fail_count": 0
-    },
-    {
-      "id": "4a987f650ef1b44c",
-      "name": "Польша · WL · YT 0% (WAW)",
-      "display_protocol": "VLESS Reality",
-      "protocol": "vless",
-      "host": "195.3.223.125",
-      "port": 443,
-      "sni": "api-net-ctl.galioncc.com",
-      "exit_country": "PL",
-      "exit_colo": "WAW",
-      "exit_ip": "195.3.223.53",
-      "rtt_ms": 702,
-      "kbps": 343,
-      "passed_32kb": true,
-      "whitelist_friendly": true,
-      "fragment_enabled": false,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": true,
-      "yt_country": "RU",
-      "source_tier": 1,
-      "raw_uri": "vless://a30903dc-1bf0-4be5-8b1b-603a3a56211c@195.3.223.125:443?security=reality&sni=api-net-ctl.galioncc.com&fp=firefox&pbk=drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ&sid=a7c92e4b10d6f835#%F0%9F%87%B5%F0%9F%87%B1%20Poland%2C%20Warsaw%20%7C%20%5BBL%5D",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "195.3.223.125",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "id": "a30903dc-1bf0-4be5-8b1b-603a3a56211c"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "network": "tcp",
-          "realitySettings": {
-            "fingerprint": "firefox",
-            "publicKey": "drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ",
-            "serverName": "api-net-ctl.galioncc.com",
-            "shortId": "a7c92e4b10d6f835"
-          },
-          "security": "reality"
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909188,
-      "fail_count": 0
-    },
-    {
-      "id": "9059ce4673ed653a",
-      "name": "Польша · YT 0% [RU] (FRA)",
-      "display_protocol": "VLESS Reality",
-      "protocol": "vless",
-      "host": "31.76.32.122",
-      "port": 443,
-      "sni": "p1.xvanta.online",
-      "exit_country": "PL",
-      "exit_colo": "FRA",
-      "exit_ip": "31.77.228.53",
-      "rtt_ms": 707,
-      "kbps": 323,
-      "passed_32kb": true,
-      "whitelist_friendly": false,
-      "fragment_enabled": false,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": true,
-      "yt_country": "RU",
-      "source_tier": 1,
-      "raw_uri": "vless://71b566cb-78c4-48e4-af5b-720e4f7884f2@31.76.32.122:443?type=tcp&security=reality&sni=p1.xvanta.online&fp=chrome&flow=xtls-rprx-vision&pbk=O35Np_ugrc3mUDIEO4UnViEwRobM2r9kqQCdcdCHjEI&sid=cb33163cf9c03ab1&encryption=none#🔥Join+Telegram:@Farah_VPN🟣",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "31.76.32.122",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "flow": "xtls-rprx-vision",
-                  "id": "71b566cb-78c4-48e4-af5b-720e4f7884f2"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "network": "tcp",
-          "realitySettings": {
-            "fingerprint": "chrome",
-            "publicKey": "O35Np_ugrc3mUDIEO4UnViEwRobM2r9kqQCdcdCHjEI",
-            "serverName": "p1.xvanta.online",
-            "shortId": "cb33163cf9c03ab1"
-          },
-          "security": "reality"
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909261,
-      "fail_count": 0
-    },
-    {
-      "id": "ff160a0cebd572bc",
-      "name": "Германия (DUS)",
-      "display_protocol": "VLESS Reality",
-      "protocol": "vless",
-      "host": "46.28.69.123",
-      "port": 443,
-      "sni": "gateway.icloud.com",
-      "exit_country": "DE",
-      "exit_colo": "DUS",
-      "exit_ip": "46.28.69.123",
-      "rtt_ms": 714,
-      "kbps": 313,
-      "passed_32kb": true,
-      "whitelist_friendly": false,
-      "fragment_enabled": false,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": false,
-      "yt_country": "UA",
-      "source_tier": 1,
-      "raw_uri": "vless://b945f9aa-1b45-4912-aa7e-248509472bad@46.28.69.123:443?encryption=none&flow=xtls-rprx-vision&fp=&pbk=7KnJYp2-sE3o35mnbSZzX3fNg-ns9n8xyNfkRSHCD3E&security=reality&sid=238e23c5150f02e4&sni=gateway.icloud.com&type=tcp#DE 🇩🇪 | @Raydikalx | D32DAA",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "46.28.69.123",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "flow": "xtls-rprx-vision",
-                  "id": "b945f9aa-1b45-4912-aa7e-248509472bad"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "network": "tcp",
-          "realitySettings": {
-            "fingerprint": "chrome",
-            "publicKey": "7KnJYp2-sE3o35mnbSZzX3fNg-ns9n8xyNfkRSHCD3E",
-            "serverName": "gateway.icloud.com",
-            "shortId": "238e23c5150f02e4"
-          },
-          "security": "reality"
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909231,
-      "fail_count": 0
-    },
-    {
-      "id": "e5f9f9650fe59657",
-      "name": "Польша (WAW)",
-      "display_protocol": "Trojan XHTTP TLS",
-      "protocol": "trojan",
-      "host": "187.52.45.183",
-      "port": 54032,
-      "sni": "flawers.shop",
-      "exit_country": "PL",
-      "exit_colo": "WAW",
-      "exit_ip": "187.52.45.183",
-      "rtt_ms": 716,
-      "kbps": 265,
-      "passed_32kb": true,
-      "whitelist_friendly": false,
-      "fragment_enabled": false,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": false,
-      "yt_country": "GB",
-      "source_tier": 1,
-      "raw_uri": "trojan://c76f0a11e6ba410084c745ad5e92db5f@flawers.shop:54032?mode=auto&path=/assets/static/main.js&security=reality&pbk=SmpFJJ640phT1swTmtifquX9PSuaq2eA0hdUkD2mfyo&host=flawers.shop&fp=chrome&spx=/5d4eabea0dd7089&type=xhttp&sni=flawers.shop&sid=a4#PL 🇵🇱 | @Raydikalx | B0B4A3",
-      "outbound_json": {
-        "protocol": "trojan",
-        "settings": {
-          "address": "187.52.45.183",
-          "password": "c76f0a11e6ba410084c745ad5e92db5f",
-          "port": 54032
-        },
-        "streamSettings": {
-          "network": "xhttp",
-          "realitySettings": {
-            "fingerprint": "chrome",
-            "publicKey": "SmpFJJ640phT1swTmtifquX9PSuaq2eA0hdUkD2mfyo",
-            "serverName": "flawers.shop",
-            "shortId": "a4",
-            "spiderX": "/5d4eabea0dd7089"
-          },
-          "security": "reality",
-          "xhttpSettings": {
-            "host": "flawers.shop",
-            "mode": "auto",
-            "path": "/assets/static/main.js"
-          }
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909201,
-      "fail_count": 0
-    },
-    {
-      "id": "b6b20650b4ddd442",
-      "name": "Финляндия (HEL)",
-      "display_protocol": "VLESS Reality",
-      "protocol": "vless",
-      "host": "141.227.170.220",
-      "port": 8443,
-      "sni": "apple.com",
-      "exit_country": "FI",
-      "exit_colo": "HEL",
-      "exit_ip": "141.227.170.220",
-      "rtt_ms": 718,
-      "kbps": 355,
-      "passed_32kb": true,
-      "whitelist_friendly": false,
-      "fragment_enabled": true,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": false,
-      "yt_country": "FR",
-      "source_tier": 1,
-      "raw_uri": "vless://6c077993-952c-4318-9e93-89056a207a9b@141.227.170.220:8443?security=reality&encryption=none&pbk=SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc&headerType=none&fp=firefox&type=tcp&flow=xtls-rprx-vision&sni=apple.com&sid=6ba85179e30d4fc2#FI 🇫🇮 | @Raydikalx | 184B76",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "141.227.170.220",
-              "port": 8443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "flow": "xtls-rprx-vision",
-                  "id": "6c077993-952c-4318-9e93-89056a207a9b"
                 }
               ]
             }
@@ -1221,17 +1126,213 @@
           },
           "network": "tcp",
           "realitySettings": {
-            "fingerprint": "firefox",
-            "publicKey": "SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc",
-            "serverName": "apple.com",
-            "shortId": "6ba85179e30d4fc2"
+            "fingerprint": "chrome",
+            "publicKey": "q_MJ5Zo2vcnePWq3KY653QUPX8mNSvapLpqXU4NuPho",
+            "serverName": "germany.cloudhouse1.ru",
+            "shortId": "464db718e17e4107"
           },
           "security": "reality"
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909210,
-      "fail_count": 0
+      "verified_unix": 1794918182,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "bab9fd835f2e2136",
+      "name": "Испания · WL · YT 0% (MAD)",
+      "display_protocol": "VLESS XHTTP TLS",
+      "protocol": "vless",
+      "host": "84.32.108.7",
+      "port": 443,
+      "sni": "7d1a74fd.ferrin.uk",
+      "exit_country": "ES",
+      "exit_colo": "MAD",
+      "exit_ip": "196.196.150.18",
+      "rtt_ms": 739,
+      "kbps": 301,
+      "passed_32kb": true,
+      "whitelist_friendly": true,
+      "fragment_enabled": true,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": true,
+      "yt_country": "RU",
+      "source_tier": 1,
+      "raw_uri": "vless://7d1a74fd-8a38-4a29-863f-5da53a9e557e@84.32.108.7:443?security=tls&sni=7d1a74fd.ferrin.uk&type=xhttp&path=%2Fes&fp=chrome&allowInsecure=0#%F0%9F%87%AA%F0%9F%87%B8%20Spain%2C%20Valencia%20%7C%20%5BBL%5D",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "84.32.108.7",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "id": "7d1a74fd-8a38-4a29-863f-5da53a9e557e"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "finalmask": {
+            "tcp": [
+              {
+                "settings": {
+                  "delay": "1-3",
+                  "length": "40-120",
+                  "maxSplit": 16,
+                  "packets": "tlshello"
+                },
+                "type": "fragment"
+              }
+            ]
+          },
+          "network": "xhttp",
+          "security": "tls",
+          "tlsSettings": {
+            "fingerprint": "chrome",
+            "serverName": "7d1a74fd.ferrin.uk"
+          },
+          "xhttpSettings": {
+            "mode": "auto",
+            "path": "/es"
+          }
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918149,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "f55f3de5ad2a1386",
+      "name": "Британия · WL · YT 0% (LHR)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "138.124.125.193",
+      "port": 10444,
+      "sni": "ads.x5.ru",
+      "exit_country": "GB",
+      "exit_colo": "LHR",
+      "exit_ip": "138.124.125.193",
+      "rtt_ms": 742,
+      "kbps": 331,
+      "passed_32kb": true,
+      "whitelist_friendly": true,
+      "fragment_enabled": true,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": true,
+      "yt_country": "RU",
+      "source_tier": 1,
+      "raw_uri": "vless://e57ce64d-5a1a-4a90-96df-9e1bd3ad26e4@138.124.125.193:10444?security=reality&encryption=none&pbk=0oTkcqwLTUNLnSOP-VUWErmy6usAIg-biBE6ioZO-Vo&headerType=&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=ads.x5.ru&sid=8debcf36f1cc69ff#v2go%20%7C%20%F0%9F%87%AC%F0%9F%87%A7%20GB%20%7C%20VLESS%20%7C%20423",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "138.124.125.193",
+              "port": 10444,
+              "users": [
+                {
+                  "encryption": "none",
+                  "flow": "xtls-rprx-vision",
+                  "id": "e57ce64d-5a1a-4a90-96df-9e1bd3ad26e4"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "finalmask": {
+            "tcp": [
+              {
+                "settings": {
+                  "delay": "1-3",
+                  "length": "40-120",
+                  "maxSplit": 16,
+                  "packets": "tlshello"
+                },
+                "type": "fragment"
+              }
+            ]
+          },
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "chrome",
+            "publicKey": "0oTkcqwLTUNLnSOP-VUWErmy6usAIg-biBE6ioZO-Vo",
+            "serverName": "ads.x5.ru",
+            "shortId": "8debcf36f1cc69ff"
+          },
+          "security": "reality"
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918182,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "ac810e04d2c9473a",
+      "name": "Литва · WL · YT 0% (VNO)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "84.32.83.197",
+      "port": 443,
+      "sni": "api-dns-gw.galioncc.com",
+      "exit_country": "LT",
+      "exit_colo": "VNO",
+      "exit_ip": "84.32.209.118",
+      "rtt_ms": 756,
+      "kbps": 267,
+      "passed_32kb": true,
+      "whitelist_friendly": true,
+      "fragment_enabled": false,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": true,
+      "yt_country": "RU",
+      "source_tier": 1,
+      "raw_uri": "vless://a30903dc-1bf0-4be5-8b1b-603a3a56211c@84.32.83.197:443?security=reality&sni=api-dns-gw.galioncc.com&fp=firefox&pbk=drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ&sid=a7d309e4c16b825f#%F0%9F%87%B1%F0%9F%87%B9%20Lithuania%2C%20%C5%A0iauliai%20%7C%20%5BBL%5D",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "84.32.83.197",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "id": "a30903dc-1bf0-4be5-8b1b-603a3a56211c"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "firefox",
+            "publicKey": "drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ",
+            "serverName": "api-dns-gw.galioncc.com",
+            "shortId": "a7d309e4c16b825f"
+          },
+          "security": "reality"
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918149,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
       "id": "027a8b45d3f6daed",
@@ -1244,8 +1345,8 @@
       "exit_country": "GB",
       "exit_colo": "LHR",
       "exit_ip": "167.104.223.86",
-      "rtt_ms": 787,
-      "kbps": 547,
+      "rtt_ms": 786,
+      "kbps": 528,
       "passed_32kb": true,
       "whitelist_friendly": true,
       "fragment_enabled": false,
@@ -1278,37 +1379,98 @@
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909209,
-      "fail_count": 0
+      "verified_unix": 1794918169,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
-      "id": "08109fb593a94deb",
-      "name": "Турция · YT 0% [RU] (IST)",
-      "display_protocol": "VLESS Reality",
+      "id": "3a966f6dcff046d9",
+      "name": "Германия · WL · YT 0% (FRA)",
+      "display_protocol": "VLESS XHTTP Reality",
       "protocol": "vless",
-      "host": "212.98.224.35",
-      "port": 443,
-      "sni": "tr1.gofizzin.com",
-      "exit_country": "TR",
-      "exit_colo": "IST",
-      "exit_ip": "212.98.224.35",
-      "rtt_ms": 892,
-      "kbps": 277,
+      "host": "95.85.231.3",
+      "port": 2087,
+      "sni": "summit.blog-forme.ru",
+      "exit_country": "DE",
+      "exit_colo": "FRA",
+      "exit_ip": "138.124.37.220",
+      "rtt_ms": 799,
+      "kbps": 119,
       "passed_32kb": true,
-      "whitelist_friendly": false,
-      "fragment_enabled": true,
+      "whitelist_friendly": true,
+      "fragment_enabled": false,
       "via_warp": false,
       "device_verified": false,
       "yt_ad_free": true,
       "yt_country": "RU",
       "source_tier": 1,
-      "raw_uri": "vless://8197b9b9-8945-460f-99c9-325ef8a8a7c3@212.98.224.35:443?&security=reality&flow=xtls-rprx-vision&pbk=9_UhwEt_9pf8WahM1K9O6-_0vAK6q0uiNGFoHBO7s3A&sid=0e3e4d96&fp=firefox&sni=tr1.gofizzin.com&type=tcp&headerType=none&host=tr1.gofizzin.com&path=%2F#TR 🇹🇷 | @Raydikalx | F77BB0",
+      "raw_uri": "vless://549766c3-fa5f-471e-8031-ffc1f8d5064f@95.85.231.3:2087?path=/v2/sync/6e9367&security=reality&encryption=none&pbk=mbi4BZAuiq_L6pfhG2xxWmtosq0Z1Pzf18fvNSWKMxY&fp=chrome&type=xhttp&sni=summit.blog-forme.ru&sid=3258252d44113e23#DE 🇩🇪 | @Raydikalx | 0B4C12",
       "outbound_json": {
         "protocol": "vless",
         "settings": {
           "vnext": [
             {
-              "address": "212.98.224.35",
+              "address": "95.85.231.3",
+              "port": 2087,
+              "users": [
+                {
+                  "encryption": "none",
+                  "id": "549766c3-fa5f-471e-8031-ffc1f8d5064f"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "xhttp",
+          "realitySettings": {
+            "fingerprint": "chrome",
+            "publicKey": "mbi4BZAuiq_L6pfhG2xxWmtosq0Z1Pzf18fvNSWKMxY",
+            "serverName": "summit.blog-forme.ru",
+            "shortId": "3258252d44113e23"
+          },
+          "security": "reality",
+          "xhttpSettings": {
+            "mode": "auto",
+            "path": "/v2/sync/6e9367"
+          }
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918137,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "f2c0248435c8c99a",
+      "name": "Израиль · WL · YT 0% (TLV)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "45.150.108.180",
+      "port": 443,
+      "sni": "il1.gofizzin.com",
+      "exit_country": "IL",
+      "exit_colo": "TLV",
+      "exit_ip": "45.150.108.180",
+      "rtt_ms": 831,
+      "kbps": 278,
+      "passed_32kb": true,
+      "whitelist_friendly": true,
+      "fragment_enabled": false,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": true,
+      "yt_country": "RU",
+      "source_tier": 1,
+      "raw_uri": "vless://8197b9b9-8945-460f-99c9-325ef8a8a7c3@45.150.108.180:443?flow=xtls-rprx-vision&headerType=none&host=il1.gofizzin.com&path=%2F&pbk=Jw--SSPecJpt9-lke7H9Bdr8F73xxtvC_5ZrxiWRog0&security=reality&sid=dc1bf50b0e0a&sni=il1.gofizzin.com&type=tcp&fp=edge#%F0%9F%8C%90%20Anycast-IP%20%7C%20%F0%9F%87%A8%F0%9F%87%A6%20%F0%9F%87%AE%F0%9F%87%B1%20%7C%20%5BBL%5D",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "45.150.108.180",
               "port": 443,
               "users": [
                 {
@@ -1321,120 +1483,55 @@
           ]
         },
         "streamSettings": {
-          "finalmask": {
-            "tcp": [
-              {
-                "settings": {
-                  "delay": "1-3",
-                  "length": "40-120",
-                  "maxSplit": 16,
-                  "packets": "tlshello"
-                },
-                "type": "fragment"
-              }
-            ]
-          },
           "network": "tcp",
           "realitySettings": {
-            "fingerprint": "firefox",
-            "publicKey": "9_UhwEt_9pf8WahM1K9O6-_0vAK6q0uiNGFoHBO7s3A",
-            "serverName": "tr1.gofizzin.com",
-            "shortId": "0e3e4d96"
+            "fingerprint": "edge",
+            "publicKey": "Jw--SSPecJpt9-lke7H9Bdr8F73xxtvC_5ZrxiWRog0",
+            "serverName": "il1.gofizzin.com",
+            "shortId": "dc1bf50b0e0a"
           },
           "security": "reality"
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909265,
-      "fail_count": 0
+      "verified_unix": 1794918145,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
-      "id": "42fd1758274d632e",
+      "id": "467905b979f70317",
       "name": "Финляндия · WL (HEL)",
-      "display_protocol": "VLESS Reality",
-      "protocol": "vless",
-      "host": "193.188.21.253",
-      "port": 10444,
-      "sni": "video.yandex.ru",
-      "exit_country": "FI",
-      "exit_colo": "HEL",
-      "exit_ip": "193.188.21.253",
-      "rtt_ms": 929,
-      "kbps": 265,
-      "passed_32kb": true,
-      "whitelist_friendly": true,
-      "fragment_enabled": false,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": false,
-      "yt_country": "GB",
-      "source_tier": 1,
-      "raw_uri": "vless://57f7772d-f5d6-4d8f-992d-5fa5e0d6da55@193.188.21.253:10444?&security=reality&flow=xtls-rprx-vision&pbk=0oTkcqwLTUNLnSOP-VUWErmy6usAIg-biBE6ioZO-Vo&sid=8debcf36f1cc69ff&fp=safari&sni=video.yandex.ru&type=tcp&headerType=none&host=video.yandex.ru&path=%2F#SE 🇸🇪 | @Raydikalx | 53AE2B",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "193.188.21.253",
-              "port": 10444,
-              "users": [
-                {
-                  "encryption": "none",
-                  "flow": "xtls-rprx-vision",
-                  "id": "57f7772d-f5d6-4d8f-992d-5fa5e0d6da55"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "network": "tcp",
-          "realitySettings": {
-            "fingerprint": "safari",
-            "publicKey": "0oTkcqwLTUNLnSOP-VUWErmy6usAIg-biBE6ioZO-Vo",
-            "serverName": "video.yandex.ru",
-            "shortId": "8debcf36f1cc69ff"
-          },
-          "security": "reality"
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909203,
-      "fail_count": 0
-    },
-    {
-      "id": "ab487dd9bb9b3e8e",
-      "name": "Польша · YT 0% [RU] (WAW)",
       "display_protocol": "VLESS XHTTP Reality",
       "protocol": "vless",
-      "host": "130.78.31.25",
-      "port": 443,
-      "sni": "pl2.obxodvpn.us",
-      "exit_country": "PL",
-      "exit_colo": "WAW",
-      "exit_ip": "130.78.31.25",
-      "rtt_ms": 1009,
-      "kbps": 529,
+      "host": "109.71.245.99",
+      "port": 8443,
+      "sni": "music.yandex.ru",
+      "exit_country": "FI",
+      "exit_colo": "HEL",
+      "exit_ip": "80.47.239.109",
+      "rtt_ms": 868,
+      "kbps": 238,
       "passed_32kb": true,
-      "whitelist_friendly": false,
+      "whitelist_friendly": true,
       "fragment_enabled": true,
       "via_warp": false,
       "device_verified": false,
-      "yt_ad_free": true,
-      "yt_country": "RU",
+      "yt_ad_free": false,
+      "yt_country": "US",
       "source_tier": 1,
-      "raw_uri": "vless://146d567c-6335-4e63-a8aa-7ec068642440@130.78.31.25:443?security=reality&type=xhttp&path=%2Fxhttp&host=pl2.obxodvpn.us&packetEncoding=none&sni=pl2.obxodvpn.us&fp=firefox&sid=5c42ed8c&pbk=fDrDDz_GCqhDgG8kMxWXk2vRuyfBHTTNwVa7k7nJHgw&mode=packet-up#%F0%9F%87%B5%F0%9F%87%B1%20%E6%9C%BA%E5%9C%BA%E6%8E%A8%E8%8D%90%3Adafei.de%20%E6%B3%A2%E5%85%B0%2009",
+      "raw_uri": "vless://f09ca6e3-c547-4f91-95f5-77f34c4282ac@109.71.245.99:8443?mode=auto&path=/029d7a23f5ba&security=reality&encryption=none&extra={\"mode\":\"auto\",\"xPaddingBytes\":\"100-1000\"}&pbk=oeaOjlr45iDKroH7RIhUq-epbwnRAmG7jeXZHlbSzj4&type=xhttp&sni=music.yandex.ru&sid=835bff7d47836e88#v2go%20%7C%20%F0%9F%87%AB%F0%9F%87%AE%20FI%20%7C%20VLESS%20%7C%20292",
       "outbound_json": {
         "protocol": "vless",
         "settings": {
           "vnext": [
             {
-              "address": "130.78.31.25",
-              "port": 443,
+              "address": "109.71.245.99",
+              "port": 8443,
               "users": [
                 {
                   "encryption": "none",
-                  "id": "146d567c-6335-4e63-a8aa-7ec068642440"
+                  "id": "f09ca6e3-c547-4f91-95f5-77f34c4282ac"
                 }
               ]
             }
@@ -1456,22 +1553,221 @@
           },
           "network": "xhttp",
           "realitySettings": {
-            "fingerprint": "firefox",
-            "publicKey": "fDrDDz_GCqhDgG8kMxWXk2vRuyfBHTTNwVa7k7nJHgw",
-            "serverName": "pl2.obxodvpn.us",
-            "shortId": "5c42ed8c"
+            "fingerprint": "chrome",
+            "publicKey": "oeaOjlr45iDKroH7RIhUq-epbwnRAmG7jeXZHlbSzj4",
+            "serverName": "music.yandex.ru",
+            "shortId": "835bff7d47836e88"
           },
           "security": "reality",
           "xhttpSettings": {
-            "host": "pl2.obxodvpn.us",
-            "mode": "packet-up",
-            "path": "/xhttp"
+            "extra": {
+              "xPaddingBytes": "100-1000"
+            },
+            "mode": "auto",
+            "path": "/029d7a23f5ba"
           }
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909202,
-      "fail_count": 0
+      "verified_unix": 1794918136,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "08109fb593a94deb",
+      "name": "Турция · YT 0% (IST)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "212.98.224.35",
+      "port": 443,
+      "sni": "tr1.gofizzin.com",
+      "exit_country": "TR",
+      "exit_colo": "IST",
+      "exit_ip": "212.98.224.35",
+      "rtt_ms": 881,
+      "kbps": 213,
+      "passed_32kb": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": false,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": true,
+      "yt_country": "RU",
+      "source_tier": 1,
+      "raw_uri": "vless://8197b9b9-8945-460f-99c9-325ef8a8a7c3@212.98.224.35:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=tr1.gofizzin.com&fp=chrome&pbk=9_UhwEt_9pf8WahM1K9O6-_0vAK6q0uiNGFoHBO7s3A&sid=0e3e4d96&type=tcp&headerType=none&host=tr1.gofizzin.com#TR 🇹🇷 | @Raydikalx | C98EC2",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "212.98.224.35",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "flow": "xtls-rprx-vision",
+                  "id": "8197b9b9-8945-460f-99c9-325ef8a8a7c3"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "chrome",
+            "publicKey": "9_UhwEt_9pf8WahM1K9O6-_0vAK6q0uiNGFoHBO7s3A",
+            "serverName": "tr1.gofizzin.com",
+            "shortId": "0e3e4d96"
+          },
+          "security": "reality"
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918228,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "de3150f44cbdfdbb",
+      "name": "Германия · WL · YT 0% (ARN)",
+      "display_protocol": "VLESS XHTTP TLS",
+      "protocol": "vless",
+      "host": "104.18.141.67",
+      "port": 443,
+      "sni": "norway.xn--nlqaa425dbaab446bbabd698meae.online.",
+      "exit_country": "DE",
+      "exit_colo": "ARN",
+      "exit_ip": "144.31.217.18",
+      "rtt_ms": 903,
+      "kbps": 242,
+      "passed_32kb": true,
+      "whitelist_friendly": true,
+      "fragment_enabled": true,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": true,
+      "yt_country": "RU",
+      "source_tier": 1,
+      "raw_uri": "vless://0280c276-641b-49af-b699-4931c30ac137@chess.com:443?pcs=c826d82c6503682e8aec94ef5169a97f588a35cb667c096aedd9ba01a54df9f0&alpn=h2&fp=chrome&type=xhttp&sni=norway.xn--nlqaa425dbaab446bbabd698meae.online.&mode=auto&path=/api&security=tls&encryption=none&extra={\"mode\":\"auto\"}&insecure=0&host=norway.xn--nlqaa425dbaab446bbabd698meae.online&allowInsecure=0#%F0%9F%87%B3%F0%9F%87%B4%20Norway%2C%20Oslo%20%7C%20%5BBL%5D",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "104.18.141.67",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "id": "0280c276-641b-49af-b699-4931c30ac137"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "finalmask": {
+            "tcp": [
+              {
+                "settings": {
+                  "delay": "1-3",
+                  "length": "40-120",
+                  "maxSplit": 16,
+                  "packets": "tlshello"
+                },
+                "type": "fragment"
+              }
+            ]
+          },
+          "network": "xhttp",
+          "security": "tls",
+          "tlsSettings": {
+            "alpn": [
+              "h2"
+            ],
+            "fingerprint": "chrome",
+            "pinnedPeerCertSha256": "c826d82c6503682e8aec94ef5169a97f588a35cb667c096aedd9ba01a54df9f0",
+            "serverName": "norway.xn--nlqaa425dbaab446bbabd698meae.online."
+          },
+          "xhttpSettings": {
+            "host": "norway.xn--nlqaa425dbaab446bbabd698meae.online",
+            "mode": "auto",
+            "path": "/api"
+          }
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918149,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "93b17db2fc811425",
+      "name": "Чехия · WL · YT 0% (VIE)",
+      "display_protocol": "VLESS XHTTP Reality",
+      "protocol": "vless",
+      "host": "103.118.211.38",
+      "port": 443,
+      "sni": "czechia.richforever.ru",
+      "exit_country": "CZ",
+      "exit_colo": "VIE",
+      "exit_ip": "45.151.183.27",
+      "rtt_ms": 983,
+      "kbps": 162,
+      "passed_32kb": true,
+      "whitelist_friendly": true,
+      "fragment_enabled": false,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": true,
+      "yt_country": "RU",
+      "source_tier": 1,
+      "raw_uri": "vless://3dbd9377-43cc-46c3-b32c-2605908024eb@czechia.richforever.ru:443?mode=auto&path=%2F49b9f446&security=reality&encryption=none&extra=%7B%22xPaddingBytes%22%3A%22100-300%22%2C%22scMaxBufferedPosts%22%3A100%2C%22scMinPostsIntervalMs%22%3A%225-10%22%7D&pbk=PA1xWXjxZLn68I-6cjWVdqc0dYhWbu9W5c1GpjEOZgE&fp=firefox&type=xhttp&sni=czechia.richforever.ru&sid=8a9442353eebbe0f#⚡ b2n.ir/v2ray-configs | 468",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "103.118.211.38",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "id": "3dbd9377-43cc-46c3-b32c-2605908024eb"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "xhttp",
+          "realitySettings": {
+            "fingerprint": "firefox",
+            "publicKey": "PA1xWXjxZLn68I-6cjWVdqc0dYhWbu9W5c1GpjEOZgE",
+            "serverName": "czechia.richforever.ru",
+            "shortId": "8a9442353eebbe0f"
+          },
+          "security": "reality",
+          "xhttpSettings": {
+            "extra": {
+              "scMaxBufferedPosts": 100,
+              "scMinPostsIntervalMs": "5-10",
+              "xPaddingBytes": "100-300"
+            },
+            "mode": "auto",
+            "path": "/49b9f446"
+          }
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918158,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
       "id": "9e9f8f15eddf779c",
@@ -1484,8 +1780,8 @@
       "exit_country": "FI",
       "exit_colo": "HEL",
       "exit_ip": "2.29.129.112",
-      "rtt_ms": 1012,
-      "kbps": 182,
+      "rtt_ms": 1018,
+      "kbps": 246,
       "passed_32kb": true,
       "whitelist_friendly": true,
       "fragment_enabled": true,
@@ -1494,7 +1790,7 @@
       "yt_ad_free": false,
       "yt_country": "FI",
       "source_tier": 1,
-      "raw_uri": "vless://2e69b088-6ef3-417f-8247-125cf257fafd@108.156.65.62:443?encryption=none&security=tls&sni=d1ivx1xk58pr8u.cloudfront.net&fp=chrome&type=xhttp&path=%2Fcf#%F0%9F%87%AB%F0%9F%87%AE%20Finland%2C%20Helsinki%20%7C%20%5BBL%5D",
+      "raw_uri": "vless://2e69b088-6ef3-417f-8247-125cf257fafd@108.156.65.62:443?encryption=none&security=tls&sni=d1ivx1xk58pr8u.cloudfront.net&fp=firefox&type=xhttp&path=%2Fcf#%F0%9F%87%AB%F0%9F%87%AE%20Finland%2C%20Helsinki%20%7C%20%5BBL%5D",
       "outbound_json": {
         "protocol": "vless",
         "settings": {
@@ -1528,7 +1824,7 @@
           "network": "xhttp",
           "security": "tls",
           "tlsSettings": {
-            "fingerprint": "chrome",
+            "fingerprint": "firefox",
             "serverName": "d1ivx1xk58pr8u.cloudfront.net"
           },
           "xhttpSettings": {
@@ -1538,79 +1834,70 @@
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909189,
-      "fail_count": 0
+      "verified_unix": 1794918145,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
-      "id": "16463408ebfb1d17",
-      "name": "Финляндия · WL (HEL)",
-      "display_protocol": "VLESS WS TLS",
+      "id": "ab487dd9bb9b3e8e",
+      "name": "Польша · YT 0% (WAW)",
+      "display_protocol": "VLESS XHTTP Reality",
       "protocol": "vless",
-      "host": "104.16.216.181",
-      "port": 8443,
-      "sni": "T.panel001.ir",
-      "exit_country": "FI",
-      "exit_colo": "HEL",
-      "exit_ip": "65.109.190.36",
-      "rtt_ms": 1022,
-      "kbps": 209,
+      "host": "130.78.31.25",
+      "port": 443,
+      "sni": "pl2.obxodvpn.us",
+      "exit_country": "PL",
+      "exit_colo": "WAW",
+      "exit_ip": "130.78.31.25",
+      "rtt_ms": 1027,
+      "kbps": 456,
       "passed_32kb": true,
-      "whitelist_friendly": true,
-      "fragment_enabled": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": false,
       "via_warp": false,
       "device_verified": false,
-      "yt_ad_free": false,
-      "yt_country": "DE",
+      "yt_ad_free": true,
+      "yt_country": "RU",
       "source_tier": 1,
-      "raw_uri": "vless://03cc39b9-0b75-4297-b284-8158cfbb959a@ip3.ipspanel.ir:8443?alpn=http%2F1.1&encryption=none&fp=chrome&host=T.panel001.ir&path=%2F%40TurboVpn10&security=tls&sni=T.panel001.ir&type=ws#%F0%9F%87%AB%F0%9F%87%AE%20Finland%20%7C%20%F0%9F%8C%90%20%7C%20%5BBL%5D",
+      "raw_uri": "vless://146d567c-6335-4e63-a8aa-7ec068642440@130.78.31.25:443?security=reality&type=xhttp&path=%2Fxhttp&host=pl2.obxodvpn.us&packetEncoding=none&sni=pl2.obxodvpn.us&fp=firefox&sid=5c42ed8c&pbk=fDrDDz_GCqhDgG8kMxWXk2vRuyfBHTTNwVa7k7nJHgw&mode=packet-up#%F0%9F%87%B5%F0%9F%87%B1%20%E6%9C%BA%E5%9C%BA%E6%8E%A8%E8%8D%90%3Adafei.de%20%E6%B3%A2%E5%85%B0%2009",
       "outbound_json": {
         "protocol": "vless",
         "settings": {
           "vnext": [
             {
-              "address": "104.16.216.181",
-              "port": 8443,
+              "address": "130.78.31.25",
+              "port": 443,
               "users": [
                 {
                   "encryption": "none",
-                  "id": "03cc39b9-0b75-4297-b284-8158cfbb959a"
+                  "id": "146d567c-6335-4e63-a8aa-7ec068642440"
                 }
               ]
             }
           ]
         },
         "streamSettings": {
-          "finalmask": {
-            "tcp": [
-              {
-                "settings": {
-                  "delay": "1-3",
-                  "length": "40-120",
-                  "maxSplit": 16,
-                  "packets": "tlshello"
-                },
-                "type": "fragment"
-              }
-            ]
+          "network": "xhttp",
+          "realitySettings": {
+            "fingerprint": "firefox",
+            "publicKey": "fDrDDz_GCqhDgG8kMxWXk2vRuyfBHTTNwVa7k7nJHgw",
+            "serverName": "pl2.obxodvpn.us",
+            "shortId": "5c42ed8c"
           },
-          "network": "ws",
-          "security": "tls",
-          "tlsSettings": {
-            "alpn": [
-              "http/1.1"
-            ],
-            "fingerprint": "chrome",
-            "serverName": "T.panel001.ir"
-          },
-          "wsSettings": {
-            "host": "T.panel001.ir",
-            "path": "/@TurboVpn10"
+          "security": "reality",
+          "xhttpSettings": {
+            "host": "pl2.obxodvpn.us",
+            "mode": "packet-up",
+            "path": "/xhttp"
           }
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909212,
-      "fail_count": 0
+      "verified_unix": 1794918157,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
       "id": "3f11ea43b8b97ec7",
@@ -1623,8 +1910,8 @@
       "exit_country": "FI",
       "exit_colo": "HEL",
       "exit_ip": "178.17.60.32",
-      "rtt_ms": 1028,
-      "kbps": 397,
+      "rtt_ms": 1030,
+      "kbps": 394,
       "passed_32kb": true,
       "whitelist_friendly": true,
       "fragment_enabled": false,
@@ -1657,65 +1944,10 @@
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909210,
-      "fail_count": 0
-    },
-    {
-      "id": "f682a29f734b473f",
-      "name": "Франция · YT 0% [RU] (CDG)",
-      "display_protocol": "VLESS XHTTP Reality",
-      "protocol": "vless",
-      "host": "143.246.211.240",
-      "port": 443,
-      "sni": "fr.gorobsub.com",
-      "exit_country": "FR",
-      "exit_colo": "CDG",
-      "exit_ip": "143.246.211.235",
-      "rtt_ms": 1191,
-      "kbps": 342,
-      "passed_32kb": true,
-      "whitelist_friendly": false,
-      "fragment_enabled": false,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": true,
-      "yt_country": "RU",
-      "source_tier": 1,
-      "raw_uri": "vless://11512726-b692-406f-ab49-7b28f44a8294@143.246.211.240:443?path=/ae1b809ceb77&security=reality&encryption=none&pbk=_LNT4Kf7pPmeEBAnmJ7xsBu3y6Kih0Ew9AFVoDa3QSg&fp=chrome&type=xhttp&sni=fr.gorobsub.com&sid=3242cfd7#FR 🇫🇷 | @Raydikalx | 00E264",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "143.246.211.240",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "id": "11512726-b692-406f-ab49-7b28f44a8294"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "network": "xhttp",
-          "realitySettings": {
-            "fingerprint": "chrome",
-            "publicKey": "_LNT4Kf7pPmeEBAnmJ7xsBu3y6Kih0Ew9AFVoDa3QSg",
-            "serverName": "fr.gorobsub.com",
-            "shortId": "3242cfd7"
-          },
-          "security": "reality",
-          "xhttpSettings": {
-            "mode": "auto",
-            "path": "/ae1b809ceb77"
-          }
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909201,
-      "fail_count": 0
+      "verified_unix": 1794918170,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
       "id": "4fa4d3aefd4e3344",
@@ -1728,11 +1960,11 @@
       "exit_country": "SG",
       "exit_colo": "SIN",
       "exit_ip": "147.93.173.45",
-      "rtt_ms": 1243,
-      "kbps": 218,
+      "rtt_ms": 1390,
+      "kbps": 198,
       "passed_32kb": true,
       "whitelist_friendly": true,
-      "fragment_enabled": true,
+      "fragment_enabled": false,
       "via_warp": false,
       "device_verified": false,
       "yt_ad_free": false,
@@ -1757,6 +1989,465 @@
           ]
         },
         "streamSettings": {
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "chrome",
+            "publicKey": "0oTkcqwLTUNLnSOP-VUWErmy6usAIg-biBE6ioZO-Vo",
+            "serverName": "video.yandex.ru",
+            "shortId": "8debcf36f1cc69ff"
+          },
+          "security": "reality"
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918184,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "c11771396099d72c",
+      "name": "Нидерланды (AMS)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "196.196.148.76",
+      "port": 443,
+      "sni": "8a2e72t.nl20.h1clayd.shop",
+      "exit_country": "NL",
+      "exit_colo": "AMS",
+      "exit_ip": "79.182.39.163",
+      "rtt_ms": 1438,
+      "kbps": 186,
+      "passed_32kb": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": false,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": false,
+      "yt_country": "NL",
+      "source_tier": 1,
+      "raw_uri": "vless://4201786b-d99b-4147-a5f0-20d47acddb81@196.196.148.76:443?&security=reality&flow=xtls-rprx-vision&pbk=VZS639V1i-35g7VXb9EoTYL-Srm7858sxcvFAunncmA&sid=8d0d0679f42ffd98&fp=firefox&sni=8a2e72t.nl20.h1clayd.shop&type=tcp&headerType=none&host=8a2e72t.nl20.h1clayd.shop&path=%2F#%F0%9F%87%B3%F0%9F%87%B1%20%E8%8D%B7%E5%85%B0%20%7C%20NLD",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "196.196.148.76",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "flow": "xtls-rprx-vision",
+                  "id": "4201786b-d99b-4147-a5f0-20d47acddb81"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "firefox",
+            "publicKey": "VZS639V1i-35g7VXb9EoTYL-Srm7858sxcvFAunncmA",
+            "serverName": "8a2e72t.nl20.h1clayd.shop",
+            "shortId": "8d0d0679f42ffd98"
+          },
+          "security": "reality"
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918185,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "cf4ff47fc7319809",
+      "name": "Германия · WL · YT 0% (FRA)",
+      "display_protocol": "VLESS XHTTP Reality",
+      "protocol": "vless",
+      "host": "95.85.232.83",
+      "port": 2087,
+      "sni": "trips.blog-forme.ru",
+      "exit_country": "DE",
+      "exit_colo": "FRA",
+      "exit_ip": "178.17.50.66",
+      "rtt_ms": 1620,
+      "kbps": 355,
+      "passed_32kb": true,
+      "whitelist_friendly": true,
+      "fragment_enabled": true,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": true,
+      "yt_country": "RU",
+      "source_tier": 1,
+      "raw_uri": "vless://549766c3-fa5f-471e-8031-ffc1f8d5064f@95.85.232.83:2087?mode=auto&path=%2Fv2%2Fsync%2F6e9367&security=reality&encryption=none&pbk=mbi4BZAuiq_L6pfhG2xxWmtosq0Z1Pzf18fvNSWKMxY&host=trips.blog-forme.ru&fp=chrome&type=xhttp&sni=trips.blog-forme.ru&sid=3258252d44113e23#DE 🇩🇪 | @Raydikalx | 2301A0",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "95.85.232.83",
+              "port": 2087,
+              "users": [
+                {
+                  "encryption": "none",
+                  "id": "549766c3-fa5f-471e-8031-ffc1f8d5064f"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "finalmask": {
+            "tcp": [
+              {
+                "settings": {
+                  "delay": "1-3",
+                  "length": "40-120",
+                  "maxSplit": 16,
+                  "packets": "tlshello"
+                },
+                "type": "fragment"
+              }
+            ]
+          },
+          "network": "xhttp",
+          "realitySettings": {
+            "fingerprint": "chrome",
+            "publicKey": "mbi4BZAuiq_L6pfhG2xxWmtosq0Z1Pzf18fvNSWKMxY",
+            "serverName": "trips.blog-forme.ru",
+            "shortId": "3258252d44113e23"
+          },
+          "security": "reality",
+          "xhttpSettings": {
+            "host": "trips.blog-forme.ru",
+            "mode": "auto",
+            "path": "/v2/sync/6e9367"
+          }
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918136,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "31bf864a575844ce",
+      "name": "Нидерланды · WL (AMS)",
+      "display_protocol": "VLESS XHTTP Reality",
+      "protocol": "vless",
+      "host": "217.60.27.93",
+      "port": 22443,
+      "sni": "nl16.blog-forme.ru",
+      "exit_country": "NL",
+      "exit_colo": "AMS",
+      "exit_ip": "146.103.124.79",
+      "rtt_ms": 1932,
+      "kbps": 173,
+      "passed_32kb": true,
+      "whitelist_friendly": true,
+      "fragment_enabled": true,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": false,
+      "yt_country": "NL",
+      "source_tier": 1,
+      "raw_uri": "vless://549766c3-fa5f-471e-8031-ffc1f8d5064f@217.60.27.93:22443?encryption=none&security=reality&sni=nl16.blog-forme.ru&fp=chrome&pbk=b4IjSqjLCM2MZyRiqv-VBsRB1D7CrRaQCDXaUIfp6mA&sid=646903b46c069439&type=xhttp&mode=auto&path=/v2/notes/b237806342be#🔥Join+Telegram:@Farah_VPN🟣",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "217.60.27.93",
+              "port": 22443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "id": "549766c3-fa5f-471e-8031-ffc1f8d5064f"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "finalmask": {
+            "tcp": [
+              {
+                "settings": {
+                  "delay": "1-3",
+                  "length": "40-120",
+                  "maxSplit": 16,
+                  "packets": "tlshello"
+                },
+                "type": "fragment"
+              }
+            ]
+          },
+          "network": "xhttp",
+          "realitySettings": {
+            "fingerprint": "chrome",
+            "publicKey": "b4IjSqjLCM2MZyRiqv-VBsRB1D7CrRaQCDXaUIfp6mA",
+            "serverName": "nl16.blog-forme.ru",
+            "shortId": "646903b46c069439"
+          },
+          "security": "reality",
+          "xhttpSettings": {
+            "mode": "auto",
+            "path": "/v2/notes/b237806342be"
+          }
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918240,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "f682a29f734b473f",
+      "name": "Франция · YT 0% (CDG)",
+      "display_protocol": "VLESS XHTTP Reality",
+      "protocol": "vless",
+      "host": "143.246.211.240",
+      "port": 443,
+      "sni": "fr.gorobsub.com",
+      "exit_country": "FR",
+      "exit_colo": "CDG",
+      "exit_ip": "143.246.211.235",
+      "rtt_ms": 1983,
+      "kbps": 356,
+      "passed_32kb": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": true,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": true,
+      "yt_country": "RU",
+      "source_tier": 1,
+      "raw_uri": "vless://11512726-b692-406f-ab49-7b28f44a8294@143.246.211.240:443?path=/ae1b809ceb77&security=reality&encryption=none&pbk=_LNT4Kf7pPmeEBAnmJ7xsBu3y6Kih0Ew9AFVoDa3QSg&fp=chrome&type=xhttp&sni=fr.gorobsub.com&sid=3242cfd7#v2go%20%7C%20%F0%9F%87%BA%F0%9F%87%B8%20US%20%7C%20VLESS%20%7C%20310",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "143.246.211.240",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "id": "11512726-b692-406f-ab49-7b28f44a8294"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "finalmask": {
+            "tcp": [
+              {
+                "settings": {
+                  "delay": "1-3",
+                  "length": "40-120",
+                  "maxSplit": 16,
+                  "packets": "tlshello"
+                },
+                "type": "fragment"
+              }
+            ]
+          },
+          "network": "xhttp",
+          "realitySettings": {
+            "fingerprint": "chrome",
+            "publicKey": "_LNT4Kf7pPmeEBAnmJ7xsBu3y6Kih0Ew9AFVoDa3QSg",
+            "serverName": "fr.gorobsub.com",
+            "shortId": "3242cfd7"
+          },
+          "security": "reality",
+          "xhttpSettings": {
+            "mode": "auto",
+            "path": "/ae1b809ceb77"
+          }
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918195,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "7f864144f61d4b1b",
+      "name": "Нидерланды (AMS)",
+      "display_protocol": "VLESS XHTTP TLS",
+      "protocol": "vless",
+      "host": "206.71.158.124",
+      "port": 443,
+      "sni": "dey.lnmarketplace.net",
+      "exit_country": "NL",
+      "exit_colo": "AMS",
+      "exit_ip": "206.71.158.124",
+      "rtt_ms": 2407,
+      "kbps": 319,
+      "passed_32kb": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": true,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": false,
+      "yt_country": "US",
+      "source_tier": 1,
+      "raw_uri": "vless://3536e1fa-0850-44d1-b123-925ce12476cf@206.71.158.124:443?alpn=h2&encryption=none&fp=chrome&host=dey.lnmarketplace.net&mode=stream-one&path=%2Fkavir&security=tls&sni=dey.lnmarketplace.net&type=xhttp#NL🇳🇱",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "206.71.158.124",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "id": "3536e1fa-0850-44d1-b123-925ce12476cf"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "finalmask": {
+            "tcp": [
+              {
+                "settings": {
+                  "delay": "1-3",
+                  "length": "40-120",
+                  "maxSplit": 16,
+                  "packets": "tlshello"
+                },
+                "type": "fragment"
+              }
+            ]
+          },
+          "network": "xhttp",
+          "security": "tls",
+          "tlsSettings": {
+            "alpn": [
+              "h2"
+            ],
+            "fingerprint": "chrome",
+            "serverName": "dey.lnmarketplace.net"
+          },
+          "xhttpSettings": {
+            "host": "dey.lnmarketplace.net",
+            "mode": "stream-one",
+            "path": "/kavir"
+          }
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918186,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "2020b2b96da7b72c",
+      "name": "Испания (MAD)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "196.199.122.2",
+      "port": 443,
+      "sni": "7aa271t.es1.h1clayd.click",
+      "exit_country": "ES",
+      "exit_colo": "MAD",
+      "exit_ip": "45.198.55.32",
+      "rtt_ms": 3062,
+      "kbps": 66,
+      "passed_32kb": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": false,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": false,
+      "yt_country": "ES",
+      "source_tier": 1,
+      "raw_uri": "vless://4201786b-d99b-4147-a5f0-20d47acddb81@196.199.122.2:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=7aa271t.es1.h1clayd.click&fp=firefox&pbk=ZSmetD4e9QG5CiXhniHg5HJB68L4kwbgAkJmMHtVwEE&sid=42426c882c5fcd41&type=tcp&headerType=none#%E5%A1%9E%E8%88%8C%E5%B0%94+V2CROSS.COM",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "196.199.122.2",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "flow": "xtls-rprx-vision",
+                  "id": "4201786b-d99b-4147-a5f0-20d47acddb81"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "firefox",
+            "publicKey": "ZSmetD4e9QG5CiXhniHg5HJB68L4kwbgAkJmMHtVwEE",
+            "serverName": "7aa271t.es1.h1clayd.click",
+            "shortId": "42426c882c5fcd41"
+          },
+          "security": "reality"
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918245,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "422fd6d0b4d3e92c",
+      "name": "Германия · YT 0% (FRA)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "195.206.235.234",
+      "port": 443,
+      "sni": "4935e4t.de25.h1clayd.click",
+      "exit_country": "DE",
+      "exit_colo": "FRA",
+      "exit_ip": "185.255.115.181",
+      "rtt_ms": 3206,
+      "kbps": 318,
+      "passed_32kb": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": true,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": true,
+      "yt_country": "RU",
+      "source_tier": 1,
+      "raw_uri": "vless://4201786b-d99b-4147-a5f0-20d47acddb81@4935e4t.de25.h1clayd.click:443?security=reality&encryption=none&pbk=MzgB17ZFbKqs8pbC3EscTzHid_ENc-k_Cp6nXl-2knw&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=4935e4t.de25.h1clayd.click&sid=6976d670818644cc#REALITY|NL🇳🇱",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "195.206.235.234",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "flow": "xtls-rprx-vision",
+                  "id": "4201786b-d99b-4147-a5f0-20d47acddb81"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
           "finalmask": {
             "tcp": [
               {
@@ -1773,16 +2464,148 @@
           "network": "tcp",
           "realitySettings": {
             "fingerprint": "chrome",
-            "publicKey": "0oTkcqwLTUNLnSOP-VUWErmy6usAIg-biBE6ioZO-Vo",
-            "serverName": "video.yandex.ru",
-            "shortId": "8debcf36f1cc69ff"
+            "publicKey": "MzgB17ZFbKqs8pbC3EscTzHid_ENc-k_Cp6nXl-2knw",
+            "serverName": "4935e4t.de25.h1clayd.click",
+            "shortId": "6976d670818644cc"
           },
           "security": "reality"
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909232,
-      "fail_count": 0
+      "verified_unix": 1794918186,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "5f21a5c4e7127a8b",
+      "name": "Турция (IST)",
+      "display_protocol": "Hysteria 2 (QUIC)",
+      "protocol": "hysteria2",
+      "host": "188.132.174.69",
+      "port": 43345,
+      "sni": "panel.autonetshop.ir",
+      "exit_country": "TR",
+      "exit_colo": "IST",
+      "exit_ip": "188.132.174.69",
+      "rtt_ms": 3237,
+      "kbps": 177,
+      "passed_32kb": true,
+      "whitelist_friendly": false,
+      "fragment_enabled": false,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": false,
+      "yt_country": "TR",
+      "source_tier": 1,
+      "raw_uri": "hysteria2://d1gkicdgem3bsoaa@panel.autonetshop.ir:43345?sni=panel.autonetshop.ir&obfs=salamander&obfs-password=km9oqmefh2km1i5n#TR 🇹🇷 | @Raydikalx | 02F64C",
+      "outbound_json": {
+        "protocol": "hysteria",
+        "settings": {
+          "address": "188.132.174.69",
+          "port": 43345,
+          "version": 2
+        },
+        "streamSettings": {
+          "finalmask": {
+            "udp": [
+              {
+                "settings": {
+                  "password": "km9oqmefh2km1i5n"
+                },
+                "type": "salamander"
+              }
+            ]
+          },
+          "hysteriaSettings": {
+            "auth": "d1gkicdgem3bsoaa",
+            "version": 2
+          },
+          "network": "hysteria",
+          "security": "tls",
+          "tlsSettings": {
+            "alpn": [
+              "h3"
+            ],
+            "serverName": "panel.autonetshop.ir"
+          }
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918229,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
+    },
+    {
+      "id": "49ef2a1e93c89fdd",
+      "name": "Польша · WL (WAW)",
+      "display_protocol": "VLESS Reality",
+      "protocol": "vless",
+      "host": "153.52.140.9",
+      "port": 443,
+      "sni": "pl3.fox-lisa.ru",
+      "exit_country": "PL",
+      "exit_colo": "WAW",
+      "exit_ip": "153.52.140.9",
+      "rtt_ms": 4104,
+      "kbps": 63,
+      "passed_32kb": true,
+      "whitelist_friendly": true,
+      "fragment_enabled": true,
+      "via_warp": false,
+      "device_verified": false,
+      "yt_ad_free": false,
+      "yt_country": "PL",
+      "source_tier": 1,
+      "raw_uri": "vless://ccb8ff48-3934-4250-b4ec-bb76b95d154f@pl3.fox-lisa.ru:443?security=reality&encryption=none&pbk=NaCZ-sS4poEbFwKmD7ePAVyc5OhHxsD9nkAStjXkoWs&headerType=none&fp=chrome&spx=/?TELEGRAM--B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub--TELEGRAM&type=tcp&flow=xtls-rprx-vision&sni=pl3.fox-lisa.ru&sid=027af64166562b09#v2go%20%7C%20%F0%9F%87%BA%F0%9F%87%B8%20US%20%7C%20VLESS%20%7C%20293",
+      "outbound_json": {
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "153.52.140.9",
+              "port": 443,
+              "users": [
+                {
+                  "encryption": "none",
+                  "flow": "xtls-rprx-vision",
+                  "id": "ccb8ff48-3934-4250-b4ec-bb76b95d154f"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "finalmask": {
+            "tcp": [
+              {
+                "settings": {
+                  "delay": "1-3",
+                  "length": "40-120",
+                  "maxSplit": 16,
+                  "packets": "tlshello"
+                },
+                "type": "fragment"
+              }
+            ]
+          },
+          "network": "tcp",
+          "realitySettings": {
+            "fingerprint": "chrome",
+            "publicKey": "NaCZ-sS4poEbFwKmD7ePAVyc5OhHxsD9nkAStjXkoWs",
+            "serverName": "pl3.fox-lisa.ru",
+            "shortId": "027af64166562b09",
+            "spiderX": "/?TELEGRAM--B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub-B2Hub--TELEGRAM"
+          },
+          "security": "reality"
+        },
+        "tag": "proxy"
+      },
+      "verified_unix": 1794918190,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     },
     {
       "id": "478bff932c583488",
@@ -1795,17 +2618,17 @@
       "exit_country": "FI",
       "exit_colo": "HEL",
       "exit_ip": "31.76.31.240",
-      "rtt_ms": 1560,
-      "kbps": 355,
+      "rtt_ms": 4201,
+      "kbps": 296,
       "passed_32kb": true,
       "whitelist_friendly": true,
-      "fragment_enabled": false,
+      "fragment_enabled": true,
       "via_warp": false,
       "device_verified": false,
       "yt_ad_free": false,
       "yt_country": "GB",
       "source_tier": 1,
-      "raw_uri": "vless://62995b2a-8f82-41f8-ac80-dfdfc1253e76@31.76.31.240:4443?path=%2Fastral-edge-fi&security=reality&encryption=none&extra=%7B%22xmux%22%3A+%7B%22maxConcurrency%22%3A+%2216-32%22%2C+%22hKeepAlivePeriod%22%3A+30%7D%7D&pbk=NORtYfSTVbYq7r3qD1p8f7GWN8lCapPxqQTzGE7-3WQ&host=gallery.kristinadmitriywedding.ru&fp=chrome&type=xhttp&sni=gallery.kristinadmitriywedding.ru&sid=69e9f04fdfe55673#FI 🇫🇮 | @Raydikalx | 221959",
+      "raw_uri": "vless://62995b2a-8f82-41f8-ac80-dfdfc1253e76@31.76.31.240:4443?path=%2Fastral-edge-fi&security=reality&encryption=none&extra=%7B%22xmux%22%3A+%7B%22maxConcurrency%22%3A+%2216-32%22%2C+%22hKeepAlivePeriod%22%3A+30%7D%7D&pbk=NORtYfSTVbYq7r3qD1p8f7GWN8lCapPxqQTzGE7-3WQ&host=gallery.kristinadmitriywedding.ru&fp=chrome&type=xhttp&sni=gallery.kristinadmitriywedding.ru&sid=69e9f04fdfe55673#v2go%20%7C%20%F0%9F%87%AC%F0%9F%87%A7%20GB%20%7C%20VLESS%20%7C%20258",
       "outbound_json": {
         "protocol": "vless",
         "settings": {
@@ -1823,6 +2646,19 @@
           ]
         },
         "streamSettings": {
+          "finalmask": {
+            "tcp": [
+              {
+                "settings": {
+                  "delay": "1-3",
+                  "length": "40-120",
+                  "maxSplit": 16,
+                  "packets": "tlshello"
+                },
+                "type": "fragment"
+              }
+            ]
+          },
           "network": "xhttp",
           "realitySettings": {
             "fingerprint": "chrome",
@@ -1845,636 +2681,13 @@
         },
         "tag": "proxy"
       },
-      "verified_unix": 1794909182,
-      "fail_count": 0
-    },
-    {
-      "id": "0be0952838af1f15",
-      "name": "Германия · WL (FRA)",
-      "display_protocol": "VLESS gRPC TLS",
-      "protocol": "vless",
-      "host": "104.171.139.81",
-      "port": 443,
-      "sni": "luminexorizon.ink",
-      "exit_country": "DE",
-      "exit_colo": "FRA",
-      "exit_ip": "185.126.67.41",
-      "rtt_ms": 1669,
-      "kbps": 342,
-      "passed_32kb": true,
-      "whitelist_friendly": true,
-      "fragment_enabled": true,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": false,
-      "yt_country": "BG",
-      "source_tier": 1,
-      "raw_uri": "vless://4b50270b-5caf-4c34-b3da-17b4525604a6@luminexorizon.ink:443?alpn=h2&encryption=none&insecure=0&mode=gun&security=tls&serviceName=glush.de3.v1&sni=luminexorizon.ink&type=grpc&fp=edge#%F0%9F%87%A9%F0%9F%87%AA%20Germany%20%7C%20%F0%9F%8C%90%20%5B%2ACIDR%5D",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "104.171.139.81",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "id": "4b50270b-5caf-4c34-b3da-17b4525604a6"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "finalmask": {
-            "tcp": [
-              {
-                "settings": {
-                  "delay": "1-3",
-                  "length": "40-120",
-                  "maxSplit": 16,
-                  "packets": "tlshello"
-                },
-                "type": "fragment"
-              }
-            ]
-          },
-          "grpcSettings": {
-            "multiMode": false,
-            "serviceName": "glush.de3.v1"
-          },
-          "network": "grpc",
-          "security": "tls",
-          "tlsSettings": {
-            "alpn": [
-              "h2"
-            ],
-            "fingerprint": "edge",
-            "serverName": "luminexorizon.ink"
-          }
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909189,
-      "fail_count": 0
-    },
-    {
-      "id": "bcd51d1508eca9f2",
-      "name": "Нидерланды · YT 0% [RU] (AMS)",
-      "display_protocol": "VLESS gRPC Reality",
-      "protocol": "vless",
-      "host": "201.58.139.221",
-      "port": 443,
-      "sni": "62764fg.nl19.h1clayd.shop",
-      "exit_country": "NL",
-      "exit_colo": "AMS",
-      "exit_ip": "13.141.51.148",
-      "rtt_ms": 1741,
-      "kbps": 219,
-      "passed_32kb": true,
-      "whitelist_friendly": false,
-      "fragment_enabled": false,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": true,
-      "yt_country": "RU",
-      "source_tier": 1,
-      "raw_uri": "vless://2208b003-78b1-453c-b5ca-ce847ff0efd6@62764fg.nl19.h1clayd.shop:443?type=grpc&security=reality&fp=chrome&pbk=RqABpaIKrmdoK0pwnQ5zUP2c3Dh5cLw0ueT1hb35txk&sid=cd9f7c819a97cea9&sni=62764fg.nl19.h1clayd.shop&serviceName=4c9e80459954&spx=/#US 🇺🇸 | @Raydikalx | 3CBC00",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "201.58.139.221",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "id": "2208b003-78b1-453c-b5ca-ce847ff0efd6"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "grpcSettings": {
-            "multiMode": false,
-            "serviceName": "4c9e80459954"
-          },
-          "network": "grpc",
-          "realitySettings": {
-            "fingerprint": "chrome",
-            "publicKey": "RqABpaIKrmdoK0pwnQ5zUP2c3Dh5cLw0ueT1hb35txk",
-            "serverName": "62764fg.nl19.h1clayd.shop",
-            "shortId": "cd9f7c819a97cea9",
-            "spiderX": "/"
-          },
-          "security": "reality"
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909203,
-      "fail_count": 0
-    },
-    {
-      "id": "0246ac89c1b6b53b",
-      "name": "Польша · WL (WAW)",
-      "display_protocol": "VLESS Reality",
-      "protocol": "vless",
-      "host": "80.47.10.106",
-      "port": 443,
-      "sni": "pl8.galioncc.com",
-      "exit_country": "PL",
-      "exit_colo": "WAW",
-      "exit_ip": "80.47.11.123",
-      "rtt_ms": 1753,
-      "kbps": 349,
-      "passed_32kb": true,
-      "whitelist_friendly": true,
-      "fragment_enabled": true,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": false,
-      "yt_country": "PL",
-      "source_tier": 1,
-      "raw_uri": "vless://a30903dc-1bf0-4be5-8b1b-603a3a56211c@80.47.10.106:443?encryption=none&fp=firefox&pbk=drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ&security=reality&sid=a7c92e4b10d6f835&sni=pl8.galioncc.com&type=tcp#%F0%9F%87%B5%F0%9F%87%B1%20Poland%2C%20Warsaw%20%28Mokot%C3%B3w%29%20%7C%20%5BBL%5D",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "80.47.10.106",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "id": "a30903dc-1bf0-4be5-8b1b-603a3a56211c"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "finalmask": {
-            "tcp": [
-              {
-                "settings": {
-                  "delay": "1-3",
-                  "length": "40-120",
-                  "maxSplit": 16,
-                  "packets": "tlshello"
-                },
-                "type": "fragment"
-              }
-            ]
-          },
-          "network": "tcp",
-          "realitySettings": {
-            "fingerprint": "firefox",
-            "publicKey": "drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ",
-            "serverName": "pl8.galioncc.com",
-            "shortId": "a7c92e4b10d6f835"
-          },
-          "security": "reality"
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909189,
-      "fail_count": 0
-    },
-    {
-      "id": "f0d61ebb68575e13",
-      "name": "Нидерланды · YT 0% [RU] (AMS)",
-      "display_protocol": "VLESS gRPC Reality",
-      "protocol": "vless",
-      "host": "195.206.235.48",
-      "port": 443,
-      "sni": "717252g.nl8.h1clayd.click",
-      "exit_country": "NL",
-      "exit_colo": "AMS",
-      "exit_ip": "164.37.224.246",
-      "rtt_ms": 2162,
-      "kbps": 246,
-      "passed_32kb": true,
-      "whitelist_friendly": false,
-      "fragment_enabled": true,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": true,
-      "yt_country": "RU",
-      "source_tier": 1,
-      "raw_uri": "vless://cda0862a-0f87-4be9-8ed8-1d0c9e382839@195.206.235.48:443?encryption=none&fp=firefox&pbk=PD8Jdlg3xB9QY--jwQjp8PFPzCS8-Oryw6-HWBcHMFU&security=reality&serviceName=204adda7e3da&sid=d3bd772514c87d28&sni=717252g.nl8.h1clayd.click&type=grpc#GB 🇬🇧 | @Raydikalx | 3C216A",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "195.206.235.48",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "id": "cda0862a-0f87-4be9-8ed8-1d0c9e382839"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "finalmask": {
-            "tcp": [
-              {
-                "settings": {
-                  "delay": "1-3",
-                  "length": "40-120",
-                  "maxSplit": 16,
-                  "packets": "tlshello"
-                },
-                "type": "fragment"
-              }
-            ]
-          },
-          "grpcSettings": {
-            "multiMode": false,
-            "serviceName": "204adda7e3da"
-          },
-          "network": "grpc",
-          "realitySettings": {
-            "fingerprint": "firefox",
-            "publicKey": "PD8Jdlg3xB9QY--jwQjp8PFPzCS8-Oryw6-HWBcHMFU",
-            "serverName": "717252g.nl8.h1clayd.click",
-            "shortId": "d3bd772514c87d28"
-          },
-          "security": "reality"
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909256,
-      "fail_count": 0
-    },
-    {
-      "id": "93b17db2fc811425",
-      "name": "Чехия · WL · YT 0% (VIE)",
-      "display_protocol": "VLESS XHTTP Reality",
-      "protocol": "vless",
-      "host": "103.118.211.38",
-      "port": 443,
-      "sni": "czechia.richforever.ru",
-      "exit_country": "CZ",
-      "exit_colo": "VIE",
-      "exit_ip": "45.151.183.27",
-      "rtt_ms": 2823,
-      "kbps": 206,
-      "passed_32kb": true,
-      "whitelist_friendly": true,
-      "fragment_enabled": true,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": true,
-      "yt_country": "RU",
-      "source_tier": 1,
-      "raw_uri": "vless://3dbd9377-43cc-46c3-b32c-2605908024eb@czechia.richforever.ru:443?mode=auto&path=%2F49b9f446&security=reality&encryption=none&extra=%7B%22xPaddingBytes%22%3A%22100-300%22%2C%22scMaxBufferedPosts%22%3A100%2C%22scMinPostsIntervalMs%22%3A%225-10%22%7D&pbk=PA1xWXjxZLn68I-6cjWVdqc0dYhWbu9W5c1GpjEOZgE&fp=firefox&type=xhttp&sni=czechia.richforever.ru&sid=8a9442353eebbe0f#⚡ b2n.ir/v2ray-configs | 468",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "103.118.211.38",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "id": "3dbd9377-43cc-46c3-b32c-2605908024eb"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "finalmask": {
-            "tcp": [
-              {
-                "settings": {
-                  "delay": "1-3",
-                  "length": "40-120",
-                  "maxSplit": 16,
-                  "packets": "tlshello"
-                },
-                "type": "fragment"
-              }
-            ]
-          },
-          "network": "xhttp",
-          "realitySettings": {
-            "fingerprint": "firefox",
-            "publicKey": "PA1xWXjxZLn68I-6cjWVdqc0dYhWbu9W5c1GpjEOZgE",
-            "serverName": "czechia.richforever.ru",
-            "shortId": "8a9442353eebbe0f"
-          },
-          "security": "reality",
-          "xhttpSettings": {
-            "extra": {
-              "scMaxBufferedPosts": 100,
-              "scMinPostsIntervalMs": "5-10",
-              "xPaddingBytes": "100-300"
-            },
-            "mode": "auto",
-            "path": "/49b9f446"
-          }
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909205,
-      "fail_count": 0
-    },
-    {
-      "id": "0cd7a4fb04c29dbe",
-      "name": "США · WL (SJC)",
-      "display_protocol": "VLESS WS TLS",
-      "protocol": "vless",
-      "host": "104.21.23.29",
-      "port": 443,
-      "sni": "ws137.mydosss.ccwu.cc",
-      "exit_country": "US",
-      "exit_colo": "SJC",
-      "exit_ip": "137.184.113.32",
-      "rtt_ms": 3341,
-      "kbps": 111,
-      "passed_32kb": true,
-      "whitelist_friendly": true,
-      "fragment_enabled": true,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": false,
-      "yt_country": "US",
-      "source_tier": 1,
-      "raw_uri": "vless://48eb716d-6121-43c1-9dd2-9a2a25bf3178@104.21.23.29:443?security=tls&sni=ws137.mydosss.ccwu.cc&type=ws&host=ws137.mydosss.ccwu.cc&path=%2F3b575ddc8596&fp=chrome#%F0%9F%87%BA%F0%9F%87%B8%20United%20States%20%7C%20%F0%9F%8C%90%20%7C%20%5BBL%5D",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "104.21.23.29",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "id": "48eb716d-6121-43c1-9dd2-9a2a25bf3178"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "finalmask": {
-            "tcp": [
-              {
-                "settings": {
-                  "delay": "1-3",
-                  "length": "40-120",
-                  "maxSplit": 16,
-                  "packets": "tlshello"
-                },
-                "type": "fragment"
-              }
-            ]
-          },
-          "network": "ws",
-          "security": "tls",
-          "tlsSettings": {
-            "fingerprint": "chrome",
-            "serverName": "ws137.mydosss.ccwu.cc"
-          },
-          "wsSettings": {
-            "host": "ws137.mydosss.ccwu.cc",
-            "path": "/3b575ddc8596"
-          }
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909196,
-      "fail_count": 0
-    },
-    {
-      "id": "268afdf121b1edb6",
-      "name": "Молдова (KIV)",
-      "display_protocol": "VLESS XHTTP Reality",
-      "protocol": "vless",
-      "host": "80.96.108.29",
-      "port": 443,
-      "sni": "md.gorobsub.com",
-      "exit_country": "MD",
-      "exit_colo": "KIV",
-      "exit_ip": "80.96.108.64",
-      "rtt_ms": 4210,
-      "kbps": 79,
-      "passed_32kb": true,
-      "whitelist_friendly": false,
-      "fragment_enabled": false,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": false,
-      "yt_country": "US",
-      "source_tier": 1,
-      "raw_uri": "vless://11512726-b692-406f-ab49-7b28f44a8294@80.96.108.29:443?path=/ae1b809ceb77&security=reality&encryption=none&pbk=_LNT4Kf7pPmeEBAnmJ7xsBu3y6Kih0Ew9AFVoDa3QSg&fp=chrome&type=xhttp&sni=md.gorobsub.com&sid=3242cfd7#@ConfigV2RayNG",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "80.96.108.29",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "id": "11512726-b692-406f-ab49-7b28f44a8294"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "network": "xhttp",
-          "realitySettings": {
-            "fingerprint": "chrome",
-            "publicKey": "_LNT4Kf7pPmeEBAnmJ7xsBu3y6Kih0Ew9AFVoDa3QSg",
-            "serverName": "md.gorobsub.com",
-            "shortId": "3242cfd7"
-          },
-          "security": "reality",
-          "xhttpSettings": {
-            "mode": "auto",
-            "path": "/ae1b809ceb77"
-          }
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909271,
-      "fail_count": 0
-    },
-    {
-      "id": "156476c2d36e81f6",
-      "name": "Польша · YT 0% [RU] (WAW)",
-      "display_protocol": "VLESS gRPC Reality",
-      "protocol": "vless",
-      "host": "109.172.54.235",
-      "port": 443,
-      "sni": "13e1cfg.plp1.h1cloud.net",
-      "exit_country": "PL",
-      "exit_colo": "WAW",
-      "exit_ip": "89.125.234.166",
-      "rtt_ms": 4390,
-      "kbps": 103,
-      "passed_32kb": true,
-      "whitelist_friendly": false,
-      "fragment_enabled": false,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": true,
-      "yt_country": "RU",
-      "source_tier": 1,
-      "raw_uri": "vless://3ede439b-410f-4eae-b449-4e15064c0706@13e1cfg.plp1.h1cloud.net:443?fp=chrome&pbk=cWC6AGVZ9ke_eCTWXEB-eLdf670CuoP9zP-1k8DrPxo&security=reality&serviceName=d5d6142b8b66&sid=8ae9cc8c9447c95a&sni=13e1cfg.plp1.h1cloud.net&spx=%2F&type=grpc#%F0%9F%87%A9%F0%9F%87%AA%20Germany%2C%20Frankfurt%20am%20Main%20%7C%20%5BBL%5D",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "109.172.54.235",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "id": "3ede439b-410f-4eae-b449-4e15064c0706"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "grpcSettings": {
-            "multiMode": false,
-            "serviceName": "d5d6142b8b66"
-          },
-          "network": "grpc",
-          "realitySettings": {
-            "fingerprint": "chrome",
-            "publicKey": "cWC6AGVZ9ke_eCTWXEB-eLdf670CuoP9zP-1k8DrPxo",
-            "serverName": "13e1cfg.plp1.h1cloud.net",
-            "shortId": "8ae9cc8c9447c95a",
-            "spiderX": "/"
-          },
-          "security": "reality"
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909237,
-      "fail_count": 0
-    },
-    {
-      "id": "ac810e04d2c9473a",
-      "name": "Литва · WL · YT 0% (VNO)",
-      "display_protocol": "VLESS Reality",
-      "protocol": "vless",
-      "host": "84.32.83.197",
-      "port": 443,
-      "sni": "api-dns-gw.galioncc.com",
-      "exit_country": "LT",
-      "exit_colo": "VNO",
-      "exit_ip": "84.32.209.118",
-      "rtt_ms": 4504,
-      "kbps": 157,
-      "passed_32kb": true,
-      "whitelist_friendly": true,
-      "fragment_enabled": true,
-      "via_warp": false,
-      "device_verified": false,
-      "yt_ad_free": true,
-      "yt_country": "RU",
-      "source_tier": 1,
-      "raw_uri": "vless://a30903dc-1bf0-4be5-8b1b-603a3a56211c@84.32.83.197:443?&security=reality&pbk=drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ&sid=a7d309e4c16b825f&fp=firefox&sni=api-dns-gw.galioncc.com&type=tcp&headerType=none&host=api-dns-gw.galioncc.com&path=%2F#%F0%9F%87%B1%F0%9F%87%B9%20Lithuania%2C%20%C5%A0iauliai%20%7C%20%5BBL%5D",
-      "outbound_json": {
-        "protocol": "vless",
-        "settings": {
-          "vnext": [
-            {
-              "address": "84.32.83.197",
-              "port": 443,
-              "users": [
-                {
-                  "encryption": "none",
-                  "id": "a30903dc-1bf0-4be5-8b1b-603a3a56211c"
-                }
-              ]
-            }
-          ]
-        },
-        "streamSettings": {
-          "finalmask": {
-            "tcp": [
-              {
-                "settings": {
-                  "delay": "1-3",
-                  "length": "40-120",
-                  "maxSplit": 16,
-                  "packets": "tlshello"
-                },
-                "type": "fragment"
-              }
-            ]
-          },
-          "network": "tcp",
-          "realitySettings": {
-            "fingerprint": "firefox",
-            "publicKey": "drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ",
-            "serverName": "api-dns-gw.galioncc.com",
-            "shortId": "a7d309e4c16b825f"
-          },
-          "security": "reality"
-        },
-        "tag": "proxy"
-      },
-      "verified_unix": 1794909193,
-      "fail_count": 0
+      "verified_unix": 1794918140,
+      "fail_count": 0,
+      "ok_streak": 0,
+      "last_fail_unix": 0
     }
   ],
   "tg_proxies": [
-    {
-      "id": "e3ff924253bfd549",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "shared4.ddproxy.xyz",
-      "port": 443,
-      "sni_domain": "m.beboo.ru",
-      "username": "",
-      "password": "",
-      "rtt_ms": 315,
-      "jitter_ms": 4,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=shared4.ddproxy.xyz&port=443&secret=eedddddddddddddddddddddddddddddddd6d2e6265626f6f2e7275",
-      "tme_link": "https://t.me/proxy?server=shared4.ddproxy.xyz&port=443&secret=eedddddddddddddddddddddddddddddddd6d2e6265626f6f2e7275",
-      "verified_unix": 1794909337
-    },
-    {
-      "id": "8e76f29feeee001b",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "shared2.ddproxy.xyz",
-      "port": 443,
-      "sni_domain": "m.beboo.ru",
-      "username": "",
-      "password": "",
-      "rtt_ms": 320,
-      "jitter_ms": 6,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=shared2.ddproxy.xyz&port=443&secret=eedddddddddddddddddddddddddddddddd6d2e6265626f6f2e7275",
-      "tme_link": "https://t.me/proxy?server=shared2.ddproxy.xyz&port=443&secret=eedddddddddddddddddddddddddddddddd6d2e6265626f6f2e7275",
-      "verified_unix": 1794909337
-    },
     {
       "id": "b11f9ac5d6a9c0e1",
       "kind": "faketls",
@@ -2484,68 +2697,14 @@
       "sni_domain": "browsing.yandex.com",
       "username": "",
       "password": "",
-      "rtt_ms": 434,
-      "jitter_ms": 2,
+      "rtt_ms": 432,
+      "jitter_ms": 5,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
       "tg_link": "tg://proxy?server=85.17.89.193&port=443&secret=ee76f6583e6b509d946c56287a9ca59dc362726f7773696e672e79616e6465782e636f6d",
       "tme_link": "https://t.me/proxy?server=85.17.89.193&port=443&secret=ee76f6583e6b509d946c56287a9ca59dc362726f7773696e672e79616e6465782e636f6d",
-      "verified_unix": 1794909338
-    },
-    {
-      "id": "5450a3f7804a5f7e",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "my.silvpn.su",
-      "port": 443,
-      "sni_domain": "my.newcdn.ru",
-      "username": "",
-      "password": "",
-      "rtt_ms": 438,
-      "jitter_ms": 14,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=my.silvpn.su&port=443&secret=eeea7a1978e167c0842ce31a16749038da6d792e6e657763646e2e7275",
-      "tme_link": "https://t.me/proxy?server=my.silvpn.su&port=443&secret=eeea7a1978e167c0842ce31a16749038da6d792e6e657763646e2e7275",
-      "verified_unix": 1794909338
-    },
-    {
-      "id": "b008d0a66e5b20aa",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "151.247.25.59",
-      "port": 443,
-      "sni_domain": "cloud.mail.ru",
-      "username": "",
-      "password": "",
-      "rtt_ms": 449,
-      "jitter_ms": 3,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=151.247.25.59&port=443&secret=eea7e6325e523331b679a1ba64dc2e962a636c6f75642e6d61696c2e7275",
-      "tme_link": "https://t.me/proxy?server=151.247.25.59&port=443&secret=eea7e6325e523331b679a1ba64dc2e962a636c6f75642e6d61696c2e7275",
-      "verified_unix": 1794909339
-    },
-    {
-      "id": "5d164354204e18ec",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "217.138.215.102",
-      "port": 443,
-      "sni_domain": "www.citilink.ru",
-      "username": "",
-      "password": "",
-      "rtt_ms": 448,
-      "jitter_ms": 6,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=217.138.215.102&port=443&secret=ee8357954a3df5c26e32a7b8a7978c3f107777772e636974696c696e6b2e7275",
-      "tme_link": "https://t.me/proxy?server=217.138.215.102&port=443&secret=ee8357954a3df5c26e32a7b8a7978c3f107777772e636974696c696e6b2e7275",
-      "verified_unix": 1794909338
+      "verified_unix": 1794918308
     },
     {
       "id": "9ce0aa0b3c216dbc",
@@ -2556,68 +2715,32 @@
       "sni_domain": "yandex.ru",
       "username": "",
       "password": "",
-      "rtt_ms": 453,
-      "jitter_ms": 10,
+      "rtt_ms": 449,
+      "jitter_ms": 6,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
       "tg_link": "tg://proxy?server=quackton.life&port=443&secret=ee65fc7553a1f5ca8b50b71c015b38722479616e6465782e7275",
       "tme_link": "https://t.me/proxy?server=quackton.life&port=443&secret=ee65fc7553a1f5ca8b50b71c015b38722479616e6465782e7275",
-      "verified_unix": 1794909338
+      "verified_unix": 1794918308
     },
     {
-      "id": "4e935e091571c2cb",
+      "id": "26c68702eb6534d7",
       "kind": "faketls",
       "kind_label": "Fake-TLS (ee)",
-      "host": "t02.b.qaz.it.com",
-      "port": 443,
-      "sni_domain": "api.timeweb.cloud",
-      "username": "",
-      "password": "",
-      "rtt_ms": 453,
-      "jitter_ms": 12,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=t02.b.qaz.it.com&port=443&secret=eed1562f51f9294ece3bcfafde154da5fa6170692e74696d657765622e636c6f7564",
-      "tme_link": "https://t.me/proxy?server=t02.b.qaz.it.com&port=443&secret=eed1562f51f9294ece3bcfafde154da5fa6170692e74696d657765622e636c6f7564",
-      "verified_unix": 1794909339
-    },
-    {
-      "id": "9b67f2709e4efbd9",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "he.de-fa.1.mtproto.ru",
+      "host": "he.de-nu.7.mtproto.ru",
       "port": 443,
       "sni_domain": "browser.yandex.com",
       "username": "",
       "password": "",
-      "rtt_ms": 459,
-      "jitter_ms": 12,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=he.de-fa.1.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
-      "tme_link": "https://t.me/proxy?server=he.de-fa.1.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
-      "verified_unix": 1794909339
-    },
-    {
-      "id": "eb81a62fdeffe595",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "he.18.mtproto.ru",
-      "port": 443,
-      "sni_domain": "browser.yandex.com",
-      "username": "",
-      "password": "",
-      "rtt_ms": 467,
+      "rtt_ms": 465,
       "jitter_ms": 1,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
-      "tg_link": "tg://proxy?server=he.18.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
-      "tme_link": "https://t.me/proxy?server=he.18.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
-      "verified_unix": 1794909338
+      "tg_link": "tg://proxy?server=he.de-nu.7.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
+      "tme_link": "https://t.me/proxy?server=he.de-nu.7.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
+      "verified_unix": 1794918307
     },
     {
       "id": "bbd0ae4da2dd6fb7",
@@ -2629,103 +2752,13 @@
       "username": "",
       "password": "",
       "rtt_ms": 466,
-      "jitter_ms": 4,
+      "jitter_ms": 3,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
       "tg_link": "tg://proxy?server=av.1.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
       "tme_link": "https://t.me/proxy?server=av.1.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
-      "verified_unix": 1794909339
-    },
-    {
-      "id": "29cd665792358415",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "he.67.mtproto.ru",
-      "port": 443,
-      "sni_domain": "browser.yandex.com",
-      "username": "",
-      "password": "",
-      "rtt_ms": 462,
-      "jitter_ms": 16,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=he.67.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
-      "tme_link": "https://t.me/proxy?server=he.67.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
-      "verified_unix": 1794909339
-    },
-    {
-      "id": "a036c1b0da3af736",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "he.fi.2.mtproto.ru",
-      "port": 443,
-      "sni_domain": "browser.yandex.com",
-      "username": "",
-      "password": "",
-      "rtt_ms": 466,
-      "jitter_ms": 12,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=he.fi.2.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
-      "tme_link": "https://t.me/proxy?server=he.fi.2.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
-      "verified_unix": 1794909339
-    },
-    {
-      "id": "26c68702eb6534d7",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "he.de-nu.7.mtproto.ru",
-      "port": 443,
-      "sni_domain": "browser.yandex.com",
-      "username": "",
-      "password": "",
-      "rtt_ms": 468,
-      "jitter_ms": 9,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=he.de-nu.7.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
-      "tme_link": "https://t.me/proxy?server=he.de-nu.7.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
-      "verified_unix": 1794909339
-    },
-    {
-      "id": "149fee8ac4e07dd0",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "t03.b.qaz.it.com",
-      "port": 443,
-      "sni_domain": "api.timeweb.cloud",
-      "username": "",
-      "password": "",
-      "rtt_ms": 474,
-      "jitter_ms": 3,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=t03.b.qaz.it.com&port=443&secret=ee1139e8925327971da848d3b81b7fd4876170692e74696d657765622e636c6f7564",
-      "tme_link": "https://t.me/proxy?server=t03.b.qaz.it.com&port=443&secret=ee1139e8925327971da848d3b81b7fd4876170692e74696d657765622e636c6f7564",
-      "verified_unix": 1794909339
-    },
-    {
-      "id": "3cdcfaacd54608a7",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "he.de-nu.2.mtproto.ru",
-      "port": 443,
-      "sni_domain": "browser.yandex.com",
-      "username": "",
-      "password": "",
-      "rtt_ms": 465,
-      "jitter_ms": 24,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=he.de-nu.2.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
-      "tme_link": "https://t.me/proxy?server=he.de-nu.2.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
-      "verified_unix": 1794909339
+      "verified_unix": 1794918307
     },
     {
       "id": "256b4efe6d18e0e7",
@@ -2736,14 +2769,140 @@
       "sni_domain": "browser.yandex.com",
       "username": "",
       "password": "",
-      "rtt_ms": 467,
-      "jitter_ms": 25,
+      "rtt_ms": 466,
+      "jitter_ms": 3,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
       "tg_link": "tg://proxy?server=rdp.nl.2.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
       "tme_link": "https://t.me/proxy?server=rdp.nl.2.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
-      "verified_unix": 1794909338
+      "verified_unix": 1794918308
+    },
+    {
+      "id": "3cdcfaacd54608a7",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "he.de-nu.2.mtproto.ru",
+      "port": 443,
+      "sni_domain": "browser.yandex.com",
+      "username": "",
+      "password": "",
+      "rtt_ms": 460,
+      "jitter_ms": 16,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=he.de-nu.2.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
+      "tme_link": "https://t.me/proxy?server=he.de-nu.2.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
+      "verified_unix": 1794918307
+    },
+    {
+      "id": "29cd665792358415",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "he.67.mtproto.ru",
+      "port": 443,
+      "sni_domain": "browser.yandex.com",
+      "username": "",
+      "password": "",
+      "rtt_ms": 458,
+      "jitter_ms": 21,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=he.67.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
+      "tme_link": "https://t.me/proxy?server=he.67.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
+      "verified_unix": 1794918307
+    },
+    {
+      "id": "a036c1b0da3af736",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "he.fi.2.mtproto.ru",
+      "port": 443,
+      "sni_domain": "browser.yandex.com",
+      "username": "",
+      "password": "",
+      "rtt_ms": 462,
+      "jitter_ms": 23,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=he.fi.2.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
+      "tme_link": "https://t.me/proxy?server=he.fi.2.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
+      "verified_unix": 1794918307
+    },
+    {
+      "id": "4e935e091571c2cb",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "t02.b.qaz.it.com",
+      "port": 443,
+      "sni_domain": "api.timeweb.cloud",
+      "username": "",
+      "password": "",
+      "rtt_ms": 465,
+      "jitter_ms": 19,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=t02.b.qaz.it.com&port=443&secret=eed1562f51f9294ece3bcfafde154da5fa6170692e74696d657765622e636c6f7564",
+      "tme_link": "https://t.me/proxy?server=t02.b.qaz.it.com&port=443&secret=eed1562f51f9294ece3bcfafde154da5fa6170692e74696d657765622e636c6f7564",
+      "verified_unix": 1794918307
+    },
+    {
+      "id": "eb81a62fdeffe595",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "he.18.mtproto.ru",
+      "port": 443,
+      "sni_domain": "browser.yandex.com",
+      "username": "",
+      "password": "",
+      "rtt_ms": 468,
+      "jitter_ms": 17,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=he.18.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
+      "tme_link": "https://t.me/proxy?server=he.18.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
+      "verified_unix": 1794918308
+    },
+    {
+      "id": "9b67f2709e4efbd9",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "he.de-fa.1.mtproto.ru",
+      "port": 443,
+      "sni_domain": "browser.yandex.com",
+      "username": "",
+      "password": "",
+      "rtt_ms": 469,
+      "jitter_ms": 16,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=he.de-fa.1.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
+      "tme_link": "https://t.me/proxy?server=he.de-fa.1.mtproto.ru&port=443&secret=ee2111222233334444555566667777888862726f777365722e79616e6465782e636f6d",
+      "verified_unix": 1794918307
+    },
+    {
+      "id": "149fee8ac4e07dd0",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "t03.b.qaz.it.com",
+      "port": 443,
+      "sni_domain": "api.timeweb.cloud",
+      "username": "",
+      "password": "",
+      "rtt_ms": 478,
+      "jitter_ms": 11,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=t03.b.qaz.it.com&port=443&secret=ee1139e8925327971da848d3b81b7fd4876170692e74696d657765622e636c6f7564",
+      "tme_link": "https://t.me/proxy?server=t03.b.qaz.it.com&port=443&secret=ee1139e8925327971da848d3b81b7fd4876170692e74696d657765622e636c6f7564",
+      "verified_unix": 1794918308
     },
     {
       "id": "d98f61854799941b",
@@ -2754,140 +2913,104 @@
       "sni_domain": "api.timeweb.cloud",
       "username": "",
       "password": "",
-      "rtt_ms": 473,
-      "jitter_ms": 12,
+      "rtt_ms": 485,
+      "jitter_ms": 3,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
       "tg_link": "tg://proxy?server=t01.b.qaz.it.com&port=443&secret=eebfe9045b7adc0d9a306e5c9f41978de16170692e74696d657765622e636c6f7564",
       "tme_link": "https://t.me/proxy?server=t01.b.qaz.it.com&port=443&secret=eebfe9045b7adc0d9a306e5c9f41978de16170692e74696d657765622e636c6f7564",
-      "verified_unix": 1794909339
+      "verified_unix": 1794918307
     },
     {
-      "id": "4f7fda3850895bb3",
+      "id": "f6deae33da631ccc",
       "kind": "faketls",
       "kind_label": "Fake-TLS (ee)",
-      "host": "sun.lite64.click",
-      "port": 443,
+      "host": "deto84.larchmere.xyz",
+      "port": 8443,
       "sni_domain": "xapi.ozon.ru",
       "username": "",
       "password": "",
       "rtt_ms": 511,
-      "jitter_ms": 6,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=sun.lite64.click&port=443&secret=ee2b6eb790d613a1725557ce33b9a87b30786170692e6f7a6f6e2e7275",
-      "tme_link": "https://t.me/proxy?server=sun.lite64.click&port=443&secret=ee2b6eb790d613a1725557ce33b9a87b30786170692e6f7a6f6e2e7275",
-      "verified_unix": 1794909337
-    },
-    {
-      "id": "59ce1720a5faaa33",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "visu60.sorrelbay.xyz",
-      "port": 443,
-      "sni_domain": "browser.yandex.ru",
-      "username": "",
-      "password": "",
-      "rtt_ms": 512,
-      "jitter_ms": 7,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=visu60.sorrelbay.xyz&port=443&secret=ee779e9f58a7841578350dfd6d464f462062726f777365722e79616e6465782e7275",
-      "tme_link": "https://t.me/proxy?server=visu60.sorrelbay.xyz&port=443&secret=ee779e9f58a7841578350dfd6d464f462062726f777365722e79616e6465782e7275",
-      "verified_unix": 1794909337
-    },
-    {
-      "id": "79e9396dd819fd4e",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "mapo12.tidalbirch.sbs",
-      "port": 443,
-      "sni_domain": "xapi.ozon.ru",
-      "username": "",
-      "password": "",
-      "rtt_ms": 513,
-      "jitter_ms": 6,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=mapo12.tidalbirch.sbs&port=443&secret=eec351e909bc2939e1ca4fbcc6b762a1bd786170692e6f7a6f6e2e7275",
-      "tme_link": "https://t.me/proxy?server=mapo12.tidalbirch.sbs&port=443&secret=eec351e909bc2939e1ca4fbcc6b762a1bd786170692e6f7a6f6e2e7275",
-      "verified_unix": 1794909337
-    },
-    {
-      "id": "71085a2223046f32",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "migato73.foxglade.xyz",
-      "port": 443,
-      "sni_domain": "xapi.ozon.ru",
-      "username": "",
-      "password": "",
-      "rtt_ms": 518,
-      "jitter_ms": 5,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=migato73.foxglade.xyz&port=443&secret=eea4a5485d284eb7d8f22ce0fa98c199c9786170692e6f7a6f6e2e7275",
-      "tme_link": "https://t.me/proxy?server=migato73.foxglade.xyz&port=443&secret=eea4a5485d284eb7d8f22ce0fa98c199c9786170692e6f7a6f6e2e7275",
-      "verified_unix": 1794909337
-    },
-    {
-      "id": "79907a9e39096aad",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "noble.tealbriar.xyz",
-      "port": 8443,
-      "sni_domain": "petrovich.ru",
-      "username": "",
-      "password": "",
-      "rtt_ms": 520,
       "jitter_ms": 3,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
-      "tg_link": "tg://proxy?server=noble.tealbriar.xyz&port=8443&secret=ee7809adb838f02953d8f53df91d2e4b35706574726f766963682e7275",
-      "tme_link": "https://t.me/proxy?server=noble.tealbriar.xyz&port=8443&secret=ee7809adb838f02953d8f53df91d2e4b35706574726f766963682e7275",
-      "verified_unix": 1794909338
+      "tg_link": "tg://proxy?server=deto84.larchmere.xyz&port=8443&secret=ee3295597e6c795e6a1a4b0a1231aec821786170692e6f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=deto84.larchmere.xyz&port=8443&secret=ee3295597e6c795e6a1a4b0a1231aec821786170692e6f7a6f6e2e7275",
+      "verified_unix": 1794918308
     },
     {
-      "id": "27a5478943f1781b",
+      "id": "77509421a37129f8",
       "kind": "faketls",
       "kind_label": "Fake-TLS (ee)",
-      "host": "sky.driftquill.click",
+      "host": "gagasu90.copperfinch.top",
       "port": 443,
       "sni_domain": "xapi.ozon.ru",
       "username": "",
       "password": "",
-      "rtt_ms": 523,
-      "jitter_ms": 1,
+      "rtt_ms": 512,
+      "jitter_ms": 4,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
-      "tg_link": "tg://proxy?server=sky.driftquill.click&port=443&secret=ee2b6eb790d613a1725557ce33b9a87b30786170692e6f7a6f6e2e7275",
-      "tme_link": "https://t.me/proxy?server=sky.driftquill.click&port=443&secret=ee2b6eb790d613a1725557ce33b9a87b30786170692e6f7a6f6e2e7275",
-      "verified_unix": 1794909337
+      "tg_link": "tg://proxy?server=gagasu90.copperfinch.top&port=443&secret=ee3dd96613c02e8e9864bc2b3fa6b4a84a786170692e6f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=gagasu90.copperfinch.top&port=443&secret=ee3dd96613c02e8e9864bc2b3fa6b4a84a786170692e6f7a6f6e2e7275",
+      "verified_unix": 1794918307
     },
     {
-      "id": "8810282603bda43e",
+      "id": "4ac428eb4b7e4ca0",
       "kind": "faketls",
       "kind_label": "Fake-TLS (ee)",
-      "host": "dema91.larchmere.xyz",
+      "host": "gakany71.ashwren.xyz",
       "port": 443,
       "sni_domain": "xapi.ozon.ru",
       "username": "",
       "password": "",
-      "rtt_ms": 523,
-      "jitter_ms": 0,
+      "rtt_ms": 514,
+      "jitter_ms": 3,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
-      "tg_link": "tg://proxy?server=dema91.larchmere.xyz&port=443&secret=ee58851f6640315bea58279e83ed6ca84c786170692e6f7a6f6e2e7275",
-      "tme_link": "https://t.me/proxy?server=dema91.larchmere.xyz&port=443&secret=ee58851f6640315bea58279e83ed6ca84c786170692e6f7a6f6e2e7275",
-      "verified_unix": 1794909337
+      "tg_link": "tg://proxy?server=gakany71.ashwren.xyz&port=443&secret=eef17c22a56cac8bd46d12b91f8f9e102f786170692e6f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=gakany71.ashwren.xyz&port=443&secret=eef17c22a56cac8bd46d12b91f8f9e102f786170692e6f7a6f6e2e7275",
+      "verified_unix": 1794918307
+    },
+    {
+      "id": "a8c6a9aee18f4b38",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "nema75.kelpmoor.xyz",
+      "port": 443,
+      "sni_domain": "ozon.ru",
+      "username": "",
+      "password": "",
+      "rtt_ms": 516,
+      "jitter_ms": 3,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=nema75.kelpmoor.xyz&port=443&secret=ee3766caef3a1312832d053fae6706c1d86f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=nema75.kelpmoor.xyz&port=443&secret=ee3766caef3a1312832d053fae6706c1d86f7a6f6e2e7275",
+      "verified_unix": 1794918308
+    },
+    {
+      "id": "7648da18cd99c5a3",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "mtpvideo.my",
+      "port": 443,
+      "sni_domain": "xapi.ozon.ru",
+      "username": "",
+      "password": "",
+      "rtt_ms": 516,
+      "jitter_ms": 2,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=mtpvideo.my&port=443&secret=ee616cf892574b078aab3f73e63b8b7df4786170692e6f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=mtpvideo.my&port=443&secret=ee616cf892574b078aab3f73e63b8b7df4786170692e6f7a6f6e2e7275",
+      "verified_unix": 1794918309
     },
     {
       "id": "7215307b69e54efd",
@@ -2898,50 +3021,104 @@
       "sni_domain": "xapi.ozon.ru",
       "username": "",
       "password": "",
-      "rtt_ms": 522,
-      "jitter_ms": 2,
+      "rtt_ms": 517,
+      "jitter_ms": 5,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
       "tg_link": "tg://proxy?server=granite.mtproxy.zip&port=443&secret=ee3f8a91c2d7e04b6a9f12c5e8370bd4aa786170692e6f7a6f6e2e7275",
       "tme_link": "https://t.me/proxy?server=granite.mtproxy.zip&port=443&secret=ee3f8a91c2d7e04b6a9f12c5e8370bd4aa786170692e6f7a6f6e2e7275",
-      "verified_unix": 1794909337
+      "verified_unix": 1794918307
     },
     {
-      "id": "e5016660092b82fe",
+      "id": "947efa3a393550a4",
       "kind": "faketls",
       "kind_label": "Fake-TLS (ee)",
-      "host": "zenith.lanternmoss.top",
+      "host": "a03.lovely.lat",
+      "port": 443,
+      "sni_domain": "xapi.ozon.ru",
+      "username": "",
+      "password": "",
+      "rtt_ms": 514,
+      "jitter_ms": 10,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=a03.lovely.lat&port=443&secret=ee68d6a83140657a1c7bf8e64d98ce9432786170692e6f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=a03.lovely.lat&port=443&secret=ee68d6a83140657a1c7bf8e64d98ce9432786170692e6f7a6f6e2e7275",
+      "verified_unix": 1794918308
+    },
+    {
+      "id": "27a5478943f1781b",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "sky.driftquill.click",
       "port": 443,
       "sni_domain": "xapi.ozon.ru",
       "username": "",
       "password": "",
       "rtt_ms": 519,
-      "jitter_ms": 8,
+      "jitter_ms": 3,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
-      "tg_link": "tg://proxy?server=zenith.lanternmoss.top&port=443&secret=ee2b6eb790d613a1725557ce33b9a87b30786170692e6f7a6f6e2e7275",
-      "tme_link": "https://t.me/proxy?server=zenith.lanternmoss.top&port=443&secret=ee2b6eb790d613a1725557ce33b9a87b30786170692e6f7a6f6e2e7275",
-      "verified_unix": 1794909338
+      "tg_link": "tg://proxy?server=sky.driftquill.click&port=443&secret=ee2b6eb790d613a1725557ce33b9a87b30786170692e6f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=sky.driftquill.click&port=443&secret=ee2b6eb790d613a1725557ce33b9a87b30786170692e6f7a6f6e2e7275",
+      "verified_unix": 1794918307
     },
     {
-      "id": "ca0527d126bc963b",
+      "id": "79e9396dd819fd4e",
       "kind": "faketls",
       "kind_label": "Fake-TLS (ee)",
-      "host": "maraka16.ashwren.xyz",
+      "host": "mapo12.tidalbirch.sbs",
       "port": 443,
-      "sni_domain": "browser.yandex.ru",
+      "sni_domain": "xapi.ozon.ru",
       "username": "",
       "password": "",
-      "rtt_ms": 520,
-      "jitter_ms": 8,
+      "rtt_ms": 518,
+      "jitter_ms": 5,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
-      "tg_link": "tg://proxy?server=maraka16.ashwren.xyz&port=443&secret=ee912defad667a620d66dbf5fd0b2a1bcc62726f777365722e79616e6465782e7275",
-      "tme_link": "https://t.me/proxy?server=maraka16.ashwren.xyz&port=443&secret=ee912defad667a620d66dbf5fd0b2a1bcc62726f777365722e79616e6465782e7275",
-      "verified_unix": 1794909337
+      "tg_link": "tg://proxy?server=mapo12.tidalbirch.sbs&port=443&secret=eec351e909bc2939e1ca4fbcc6b762a1bd786170692e6f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=mapo12.tidalbirch.sbs&port=443&secret=eec351e909bc2939e1ca4fbcc6b762a1bd786170692e6f7a6f6e2e7275",
+      "verified_unix": 1794918307
+    },
+    {
+      "id": "c3298fa34761f471",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "gade59.kelpmoor.xyz",
+      "port": 443,
+      "sni_domain": "ozon.ru",
+      "username": "",
+      "password": "",
+      "rtt_ms": 518,
+      "jitter_ms": 5,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=gade59.kelpmoor.xyz&port=443&secret=eef17c22a56cac8bd46d12b91f8f9e102f6f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=gade59.kelpmoor.xyz&port=443&secret=eef17c22a56cac8bd46d12b91f8f9e102f6f7a6f6e2e7275",
+      "verified_unix": 1794918307
+    },
+    {
+      "id": "d9e37c4282672c84",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "playplus.mtproxy.me",
+      "port": 443,
+      "sni_domain": "xapi.ozon.ru",
+      "username": "",
+      "password": "",
+      "rtt_ms": 521,
+      "jitter_ms": 1,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=playplus.mtproxy.me&port=443&secret=ee616cf892574b078aab3f73e63b8b7df4786170692e6f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=playplus.mtproxy.me&port=443&secret=ee616cf892574b078aab3f73e63b8b7df4786170692e6f7a6f6e2e7275",
+      "verified_unix": 1794918307
     },
     {
       "id": "2aa86551dca09c44",
@@ -2952,50 +3129,122 @@
       "sni_domain": "xapi.ozon.ru",
       "username": "",
       "password": "",
-      "rtt_ms": 522,
-      "jitter_ms": 5,
+      "rtt_ms": 518,
+      "jitter_ms": 6,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
       "tg_link": "tg://proxy?server=losuny65.quietfjord.click&port=443&secret=ee214011ba04108a7b1836df3a5e918b3b786170692e6f7a6f6e2e7275",
       "tme_link": "https://t.me/proxy?server=losuny65.quietfjord.click&port=443&secret=ee214011ba04108a7b1836df3a5e918b3b786170692e6f7a6f6e2e7275",
-      "verified_unix": 1794909337
+      "verified_unix": 1794918307
     },
     {
-      "id": "98fdf58f8f85b052",
+      "id": "18012c7baff2c72b",
       "kind": "faketls",
       "kind_label": "Fake-TLS (ee)",
-      "host": "crest.tealbriar.xyz",
+      "host": "phoenix.tidalbirch.sbs",
       "port": 8443,
-      "sni_domain": "petrovich.ru",
+      "sni_domain": "xapi.ozon.ru",
       "username": "",
       "password": "",
-      "rtt_ms": 522,
+      "rtt_ms": 515,
+      "jitter_ms": 12,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=phoenix.tidalbirch.sbs&port=8443&secret=ee1c0302da542b3dbfa43927dfa654feaf786170692e6f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=phoenix.tidalbirch.sbs&port=8443&secret=ee1c0302da542b3dbfa43927dfa654feaf786170692e6f7a6f6e2e7275",
+      "verified_unix": 1794918309
+    },
+    {
+      "id": "04484bc9ff6886a4",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "viviri32.kelpmoor.xyz",
+      "port": 8443,
+      "sni_domain": "ozon.ru",
+      "username": "",
+      "password": "",
+      "rtt_ms": 515,
+      "jitter_ms": 14,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=viviri32.kelpmoor.xyz&port=8443&secret=ee779e9f58a7841578350dfd6d464f46206f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=viviri32.kelpmoor.xyz&port=8443&secret=ee779e9f58a7841578350dfd6d464f46206f7a6f6e2e7275",
+      "verified_unix": 1794918308
+    },
+    {
+      "id": "ab54c43f044fbe05",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "brookpearl.heronglade.space",
+      "port": 8443,
+      "sni_domain": "xapi.ozon.ru",
+      "username": "",
+      "password": "",
+      "rtt_ms": 521,
       "jitter_ms": 5,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
-      "tg_link": "tg://proxy?server=crest.tealbriar.xyz&port=8443&secret=ee7809adb838f02953d8f53df91d2e4b35706574726f766963682e7275",
-      "tme_link": "https://t.me/proxy?server=crest.tealbriar.xyz&port=8443&secret=ee7809adb838f02953d8f53df91d2e4b35706574726f766963682e7275",
-      "verified_unix": 1794909339
+      "tg_link": "tg://proxy?server=brookpearl.heronglade.space&port=8443&secret=ee2b60d9fbfb7978842047eb90c50862a0786170692e6f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=brookpearl.heronglade.space&port=8443&secret=ee2b60d9fbfb7978842047eb90c50862a0786170692e6f7a6f6e2e7275",
+      "verified_unix": 1794918308
     },
     {
-      "id": "b1aec5f38df0c40c",
+      "id": "cd35d388fc14b9b9",
       "kind": "faketls",
       "kind_label": "Fake-TLS (ee)",
-      "host": "lomi68.mosswren.vip",
-      "port": 443,
-      "sni_domain": "xapi.ozon.ru",
+      "host": "pony78.ashwren.xyz",
+      "port": 8443,
+      "sni_domain": "ozon.ru",
       "username": "",
       "password": "",
-      "rtt_ms": 520,
-      "jitter_ms": 11,
+      "rtt_ms": 519,
+      "jitter_ms": 8,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
-      "tg_link": "tg://proxy?server=lomi68.mosswren.vip&port=443&secret=ee0e64e9c23cb7c36a7bdba40eabaf39be786170692e6f7a6f6e2e7275",
-      "tme_link": "https://t.me/proxy?server=lomi68.mosswren.vip&port=443&secret=ee0e64e9c23cb7c36a7bdba40eabaf39be786170692e6f7a6f6e2e7275",
-      "verified_unix": 1794909337
+      "tg_link": "tg://proxy?server=pony78.ashwren.xyz&port=8443&secret=ee779e9f58a7841578350dfd6d464f46206f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=pony78.ashwren.xyz&port=8443&secret=ee779e9f58a7841578350dfd6d464f46206f7a6f6e2e7275",
+      "verified_unix": 1794918308
+    },
+    {
+      "id": "fc82296c9558fdc8",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "pine.saltfern.xyz",
+      "port": 8443,
+      "sni_domain": "xapi.ozon.ru",
+      "username": "",
+      "password": "",
+      "rtt_ms": 521,
+      "jitter_ms": 4,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=pine.saltfern.xyz&port=8443&secret=ee1c0302da542b3dbfa43927dfa654feaf786170692e6f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=pine.saltfern.xyz&port=8443&secret=ee1c0302da542b3dbfa43927dfa654feaf786170692e6f7a6f6e2e7275",
+      "verified_unix": 1794918309
+    },
+    {
+      "id": "ca0527d126bc963b",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "maraka16.ashwren.xyz",
+      "port": 443,
+      "sni_domain": "browser.yandex.ru",
+      "username": "",
+      "password": "",
+      "rtt_ms": 521,
+      "jitter_ms": 6,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=maraka16.ashwren.xyz&port=443&secret=ee912defad667a620d66dbf5fd0b2a1bcc62726f777365722e79616e6465782e7275",
+      "tme_link": "https://t.me/proxy?server=maraka16.ashwren.xyz&port=443&secret=ee912defad667a620d66dbf5fd0b2a1bcc62726f777365722e79616e6465782e7275",
+      "verified_unix": 1794918307
     },
     {
       "id": "7d2708bbdc2c63c6",
@@ -3007,13 +3256,31 @@
       "username": "",
       "password": "",
       "rtt_ms": 521,
-      "jitter_ms": 9,
+      "jitter_ms": 7,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
       "tg_link": "tg://proxy?server=vista.driftquill.click&port=443&secret=ee2b6eb790d613a1725557ce33b9a87b30786170692e6f7a6f6e2e7275",
       "tme_link": "https://t.me/proxy?server=vista.driftquill.click&port=443&secret=ee2b6eb790d613a1725557ce33b9a87b30786170692e6f7a6f6e2e7275",
-      "verified_unix": 1794909337
+      "verified_unix": 1794918307
+    },
+    {
+      "id": "8810282603bda43e",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "dema91.larchmere.xyz",
+      "port": 443,
+      "sni_domain": "xapi.ozon.ru",
+      "username": "",
+      "password": "",
+      "rtt_ms": 524,
+      "jitter_ms": 0,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=dema91.larchmere.xyz&port=443&secret=ee58851f6640315bea58279e83ed6ca84c786170692e6f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=dema91.larchmere.xyz&port=443&secret=ee58851f6640315bea58279e83ed6ca84c786170692e6f7a6f6e2e7275",
+      "verified_unix": 1794918307
     },
     {
       "id": "04fe6de5bf14dd74",
@@ -3024,176 +3291,158 @@
       "sni_domain": "xapi.ozon.ru",
       "username": "",
       "password": "",
-      "rtt_ms": 525,
-      "jitter_ms": 1,
+      "rtt_ms": 521,
+      "jitter_ms": 6,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
       "tg_link": "tg://proxy?server=neri21.sorrelbay.xyz&port=443&secret=eee1d528d13649f8288c1ea7898787b486786170692e6f7a6f6e2e7275",
       "tme_link": "https://t.me/proxy?server=neri21.sorrelbay.xyz&port=443&secret=eee1d528d13649f8288c1ea7898787b486786170692e6f7a6f6e2e7275",
-      "verified_unix": 1794909337
+      "verified_unix": 1794918307
     },
     {
-      "id": "4b25342ed22f6d5c",
+      "id": "f00dbd78e8e31a24",
       "kind": "faketls",
       "kind_label": "Fake-TLS (ee)",
-      "host": "jet.lanternmoss.top",
-      "port": 443,
-      "sni_domain": "xapi.ozon.ru",
-      "username": "",
-      "password": "",
-      "rtt_ms": 525,
-      "jitter_ms": 0,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=jet.lanternmoss.top&port=443&secret=ee2b6eb790d613a1725557ce33b9a87b30786170692e6f7a6f6e2e7275",
-      "tme_link": "https://t.me/proxy?server=jet.lanternmoss.top&port=443&secret=ee2b6eb790d613a1725557ce33b9a87b30786170692e6f7a6f6e2e7275",
-      "verified_unix": 1794909338
-    },
-    {
-      "id": "77250421200befcb",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "89.127.201.206",
-      "port": 443,
-      "sni_domain": "www.avito.ru",
-      "username": "",
-      "password": "",
-      "rtt_ms": 524,
-      "jitter_ms": 3,
-      "supports_calls": false,
-      "whitelist_sni": true,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=89.127.201.206&port=443&secret=ee02ad2cb059cc54486e3499efc3170e2c7777772e617669746f2e7275",
-      "tme_link": "https://t.me/proxy?server=89.127.201.206&port=443&secret=ee02ad2cb059cc54486e3499efc3170e2c7777772e617669746f2e7275",
-      "verified_unix": 1794909339
-    },
-    {
-      "id": "d9e37c4282672c84",
-      "kind": "faketls",
-      "kind_label": "Fake-TLS (ee)",
-      "host": "playplus.mtproxy.me",
-      "port": 443,
-      "sni_domain": "xapi.ozon.ru",
+      "host": "pomi46.kelpmoor.xyz",
+      "port": 8443,
+      "sni_domain": "browser.yandex.ru",
       "username": "",
       "password": "",
       "rtt_ms": 523,
+      "jitter_ms": 2,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=pomi46.kelpmoor.xyz&port=8443&secret=eef17c22a56cac8bd46d12b91f8f9e102f62726f777365722e79616e6465782e7275",
+      "tme_link": "https://t.me/proxy?server=pomi46.kelpmoor.xyz&port=8443&secret=eef17c22a56cac8bd46d12b91f8f9e102f62726f777365722e79616e6465782e7275",
+      "verified_unix": 1794918308
+    },
+    {
+      "id": "f25b83c7b4bbb8dd",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "ivoryazure.heronglade.space",
+      "port": 443,
+      "sni_domain": "xapi.ozon.ru",
+      "username": "",
+      "password": "",
+      "rtt_ms": 524,
+      "jitter_ms": 2,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=ivoryazure.heronglade.space&port=443&secret=eecb583feec28443b065f8a1f3df502eea786170692e6f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=ivoryazure.heronglade.space&port=443&secret=eecb583feec28443b065f8a1f3df502eea786170692e6f7a6f6e2e7275",
+      "verified_unix": 1794918307
+    },
+    {
+      "id": "59ce1720a5faaa33",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "visu60.sorrelbay.xyz",
+      "port": 443,
+      "sni_domain": "browser.yandex.ru",
+      "username": "",
+      "password": "",
+      "rtt_ms": 522,
       "jitter_ms": 7,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
-      "tg_link": "tg://proxy?server=playplus.mtproxy.me&port=443&secret=ee616cf892574b078aab3f73e63b8b7df4786170692e6f7a6f6e2e7275",
-      "tme_link": "https://t.me/proxy?server=playplus.mtproxy.me&port=443&secret=ee616cf892574b078aab3f73e63b8b7df4786170692e6f7a6f6e2e7275",
-      "verified_unix": 1794909337
+      "tg_link": "tg://proxy?server=visu60.sorrelbay.xyz&port=443&secret=ee779e9f58a7841578350dfd6d464f462062726f777365722e79616e6465782e7275",
+      "tme_link": "https://t.me/proxy?server=visu60.sorrelbay.xyz&port=443&secret=ee779e9f58a7841578350dfd6d464f462062726f777365722e79616e6465782e7275",
+      "verified_unix": 1794918307
     },
     {
-      "id": "109bed0be97db964",
+      "id": "eb7e64d86a812f3e",
       "kind": "faketls",
       "kind_label": "Fake-TLS (ee)",
-      "host": "maposu18.birchquay.xyz",
+      "host": "mtproto.online",
+      "port": 443,
+      "sni_domain": "www.vtb.ru",
+      "username": "",
+      "password": "",
+      "rtt_ms": 524,
+      "jitter_ms": 2,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=mtproto.online&port=443&secret=ee139e0ee36150c1ea3bf299796586b5457777772e7674622e7275",
+      "tme_link": "https://t.me/proxy?server=mtproto.online&port=443&secret=ee139e0ee36150c1ea3bf299796586b5457777772e7674622e7275",
+      "verified_unix": 1794918307
+    },
+    {
+      "id": "71085a2223046f32",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "migato73.foxglade.xyz",
       "port": 443,
       "sni_domain": "xapi.ozon.ru",
       "username": "",
       "password": "",
-      "rtt_ms": 522,
+      "rtt_ms": 521,
+      "jitter_ms": 8,
+      "supports_calls": false,
+      "whitelist_sni": true,
+      "dc_verified": 2,
+      "tg_link": "tg://proxy?server=migato73.foxglade.xyz&port=443&secret=eea4a5485d284eb7d8f22ce0fa98c199c9786170692e6f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=migato73.foxglade.xyz&port=443&secret=eea4a5485d284eb7d8f22ce0fa98c199c9786170692e6f7a6f6e2e7275",
+      "verified_unix": 1794918307
+    },
+    {
+      "id": "ea67613b7e0a4e06",
+      "kind": "faketls",
+      "kind_label": "Fake-TLS (ee)",
+      "host": "rimi88.fernlark.xyz",
+      "port": 8443,
+      "sni_domain": "xapi.ozon.ru",
+      "username": "",
+      "password": "",
+      "rtt_ms": 520,
       "jitter_ms": 11,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
-      "tg_link": "tg://proxy?server=maposu18.birchquay.xyz&port=443&secret=ee5e0432a980a8a58aebaa40580866bbc1786170692e6f7a6f6e2e7275",
-      "tme_link": "https://t.me/proxy?server=maposu18.birchquay.xyz&port=443&secret=ee5e0432a980a8a58aebaa40580866bbc1786170692e6f7a6f6e2e7275",
-      "verified_unix": 1794909337
+      "tg_link": "tg://proxy?server=rimi88.fernlark.xyz&port=8443&secret=ee3e175e0503b04fc22a65e6b6b60d5d9c786170692e6f7a6f6e2e7275",
+      "tme_link": "https://t.me/proxy?server=rimi88.fernlark.xyz&port=8443&secret=ee3e175e0503b04fc22a65e6b6b60d5d9c786170692e6f7a6f6e2e7275",
+      "verified_unix": 1794918308
     },
     {
-      "id": "9fcbddb2b0901313",
-      "kind": "dd",
-      "kind_label": "MTProto (dd)",
-      "host": "194.120.230.37",
-      "port": 443,
-      "sni_domain": "",
-      "username": "",
-      "password": "",
-      "rtt_ms": 287,
-      "jitter_ms": 1,
-      "supports_calls": false,
-      "whitelist_sni": false,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=194.120.230.37&port=443&secret=dd79e7010200010007f0030386e24c3add",
-      "tme_link": "https://t.me/proxy?server=194.120.230.37&port=443&secret=dd79e7010200010007f0030386e24c3add",
-      "verified_unix": 1794909338
-    },
-    {
-      "id": "77509421a37129f8",
+      "id": "681af7c4a0bb4908",
       "kind": "faketls",
       "kind_label": "Fake-TLS (ee)",
-      "host": "gagasu90.copperfinch.top",
-      "port": 443,
-      "sni_domain": "xapi.ozon.ru",
+      "host": "ganymi63.sorrelbay.xyz",
+      "port": 8443,
+      "sni_domain": "avito.ru",
       "username": "",
       "password": "",
-      "rtt_ms": 521,
-      "jitter_ms": 15,
+      "rtt_ms": 524,
+      "jitter_ms": 2,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
-      "tg_link": "tg://proxy?server=gagasu90.copperfinch.top&port=443&secret=ee3dd96613c02e8e9864bc2b3fa6b4a84a786170692e6f7a6f6e2e7275",
-      "tme_link": "https://t.me/proxy?server=gagasu90.copperfinch.top&port=443&secret=ee3dd96613c02e8e9864bc2b3fa6b4a84a786170692e6f7a6f6e2e7275",
-      "verified_unix": 1794909337
+      "tg_link": "tg://proxy?server=ganymi63.sorrelbay.xyz&port=8443&secret=ee0387ddee19bfe48499262c18214228ec617669746f2e7275",
+      "tme_link": "https://t.me/proxy?server=ganymi63.sorrelbay.xyz&port=8443&secret=ee0387ddee19bfe48499262c18214228ec617669746f2e7275",
+      "verified_unix": 1794918308
     },
     {
-      "id": "5b5c119941430156",
+      "id": "88a7878d52a1e4f7",
       "kind": "faketls",
       "kind_label": "Fake-TLS (ee)",
-      "host": "olive.hollowfern.sbs",
+      "host": "rade48.sorrelbay.xyz",
       "port": 443,
-      "sni_domain": "xapi.ozon.ru",
+      "sni_domain": "avito.ru",
       "username": "",
       "password": "",
       "rtt_ms": 521,
-      "jitter_ms": 15,
+      "jitter_ms": 8,
       "supports_calls": false,
       "whitelist_sni": true,
       "dc_verified": 2,
-      "tg_link": "tg://proxy?server=olive.hollowfern.sbs&port=443&secret=ee2b6eb790d613a1725557ce33b9a87b30786170692e6f7a6f6e2e7275",
-      "tme_link": "https://t.me/proxy?server=olive.hollowfern.sbs&port=443&secret=ee2b6eb790d613a1725557ce33b9a87b30786170692e6f7a6f6e2e7275",
-      "verified_unix": 1794909337
-    },
-    {
-      "id": "0d745c66d608bd88",
-      "kind": "dd",
-      "kind_label": "MTProto (dd)",
-      "host": "176.65.128.63",
-      "port": 443,
-      "sni_domain": "",
-      "username": "",
-      "password": "",
-      "rtt_ms": 288,
-      "jitter_ms": 1,
-      "supports_calls": false,
-      "whitelist_sni": false,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=176.65.128.63&port=443&secret=dd79e7010200010007f0030386e24c3add",
-      "tme_link": "https://t.me/proxy?server=176.65.128.63&port=443&secret=dd79e7010200010007f0030386e24c3add",
-      "verified_unix": 1794909338
-    },
-    {
-      "id": "835ec9cc61090b6f",
-      "kind": "dd",
-      "kind_label": "MTProto (dd)",
-      "host": "194.120.230.120",
-      "port": 443,
-      "sni_domain": "",
-      "username": "",
-      "password": "",
-      "rtt_ms": 289,
-      "jitter_ms": 1,
-      "supports_calls": false,
-      "whitelist_sni": false,
-      "dc_verified": 2,
-      "tg_link": "tg://proxy?server=194.120.230.120&port=443&secret=dd79e7010200010007f0030386e24c3add",
-      "tme_link": "https://t.me/proxy?server=194.120.230.120&port=443&secret=dd79e7010200010007f0030386e24c3add",
-      "verified_unix": 1794909338
+      "tg_link": "tg://proxy?server=rade48.sorrelbay.xyz&port=443&secret=ee8a22a2efc31d03cfe33e7dc2abb809db617669746f2e7275",
+      "tme_link": "https://t.me/proxy?server=rade48.sorrelbay.xyz&port=443&secret=ee8a22a2efc31d03cfe33e7dc2abb809db617669746f2e7275",
+      "verified_unix": 1794918309
     }
   ]
 }

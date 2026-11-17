@@ -131,6 +131,7 @@ internal fun SettingsTabContent(
 ) {
     var showSources by rememberSaveable { mutableStateOf(false) }
     var showLogs by rememberSaveable { mutableStateOf(false) }
+    var showRules by rememberSaveable { mutableStateOf(false) }
     var rttSlider by remember(settings.tgMaxRttMs) {
         mutableFloatStateOf(settings.tgMaxRttMs.toFloat())
     }
@@ -415,13 +416,49 @@ internal fun SettingsTabContent(
             }
         }
 
+        // 6b. v1.7.0 Custom per-site routing rules (Force VPN / Direct / Block)
+        item {
+            SettingsCard(title = "Свои правила сайтов (VPN / напрямую / блок)") {
+                Text(
+                    text = "Принудительно направьте любые сайты через VPN, оставьте их напрямую " +
+                        "(без VPN) или заблокируйте. Правила применяются мгновенно и главнее " +
+                        "встроенных списков.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMedium,
+                )
+                Spacer(Modifier.height(8.dp))
+                val vpnCnt = settings.rulesVpn.split(',', ' ', '\n').count { it.isNotBlank() }
+                val dirCnt = settings.rulesDirect.split(',', ' ', '\n').count { it.isNotBlank() }
+                val blkCnt = settings.rulesBlock.split(',', ' ', '\n').count { it.isNotBlank() }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    BadgePill("VPN: $vpnCnt", EmeraldDim, EmeraldPrimary)
+                    BadgePill("Напрямую: $dirCnt", CyanDim, CyanAccent)
+                    BadgePill("Блок: $blkCnt", AmberWarn.copy(alpha = 0.2f), AmberWarn)
+                    Spacer(Modifier.weight(1f))
+                    OutlinedButton(
+                        onClick = { showRules = true },
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, SurfaceStroke),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                    ) {
+                        Text("Изменить", style = MaterialTheme.typography.labelMedium, color = EmeraldPrimary)
+                    }
+                }
+            }
+        }
+
         // 7. Rust Engine Diagnostic Log & About
         item {
             SettingsCard(title = "Подробные логи и о приложении") {
                 Text(
-                    text = "VeloxVPN 1.6.0 · Ядро xray-rust 0.10.0 + velox-engine (100% Rust)\n" +
-                        "Двойной канал 2× (0 мс обрыва) · Happ crypt1–5 / AES-GCM / HWID · YouTube 0% рекламы · Zero-Idle Doze\n" +
-                        "16+ стран · Reality (PQ) / XHTTP / Hysteria 2 / Trojan / VMess / SS2022 / WG / WARP MASQUE · Android 7.0–16",
+                    text = "VeloxVPN 1.7.0 · Ядро xray-rust 0.10.0 + velox-engine (100% Rust)\n" +
+                        "Двойной канал 2× (0 мс обрыва) · резерв: та же страна → Германия/США · 0% серверов РФ\n" +
+                        "KeepAlive 28с + tcpUserTimeout 15с (анти-разрыв) · 250+ сервисов · 12 проверок · YouTube 0%\n" +
+                        "22+ страны · Reality (PQ) / XHTTP / Hysteria 2 / Trojan / VMess / SS2022 / WG / WARP MASQUE · Android 7.0–16",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextMedium,
                 )
@@ -511,6 +548,91 @@ internal fun SettingsTabContent(
 
         item { Spacer(Modifier.height(8.dp)) }
     }
+
+    if (showRules) {
+        SiteRulesDialog(
+            initialVpn = settings.rulesVpn,
+            initialDirect = settings.rulesDirect,
+            initialBlock = settings.rulesBlock,
+            onSave = { v, d, b ->
+                showRules = false
+                onUpdateSettings({ it.copy(rulesVpn = v, rulesDirect = d, rulesBlock = b) }, true)
+            },
+            onDismiss = { showRules = false },
+        )
+    }
+}
+
+@Composable
+private fun SiteRulesDialog(
+    initialVpn: String,
+    initialDirect: String,
+    initialBlock: String,
+    onSave: (String, String, String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var v by remember(initialVpn) { mutableStateOf(initialVpn) }
+    var d by remember(initialDirect) { mutableStateOf(initialDirect) }
+    var b by remember(initialBlock) { mutableStateOf(initialBlock) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceCard,
+        title = {
+            Text(
+                "Свои правила сайтов",
+                style = MaterialTheme.typography.titleMedium,
+                color = TextHigh,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Домены через запятую или с новой строки, например: openai.com, *.example.org",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMedium,
+                )
+                OutlinedTextField(
+                    value = v,
+                    onValueChange = { v = it },
+                    label = { Text("Всегда через VPN") },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 3,
+                    textStyle = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    value = d,
+                    onValueChange = { d = it },
+                    label = { Text("Всегда напрямую (без VPN)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 3,
+                    textStyle = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    value = b,
+                    onValueChange = { b = it },
+                    label = { Text("Блокировать (реклама/телеметрия)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 3,
+                    textStyle = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(v, d, b) }) {
+                Text("Сохранить и применить", color = EmeraldPrimary)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                v = ""
+                d = ""
+                b = ""
+                onSave("", "", "")
+            }) {
+                Text("Очистить", color = TextMedium)
+            }
+        },
+    )
 }
 
 @Composable

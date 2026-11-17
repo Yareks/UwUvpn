@@ -533,6 +533,7 @@ async fn handle_socks5_client(mut client: TcpStream, bridge: &TgLocalBridge) -> 
         )
         .await
         {
+            let _ = upstream.set_nodelay(true);
             client
                 .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
                 .await
