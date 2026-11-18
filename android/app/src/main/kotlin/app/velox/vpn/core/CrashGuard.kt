@@ -40,6 +40,16 @@ object CrashGuard {
         if (installed) return
         installed = true
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            // v1.7.6: падение ВСПОМОГАТЕЛЬНОГО процесса (`:probe` — проверка серверов/подписка)
+            // не должно блокировать приложение «безопасным режимом»: UI жив и полностью рабочий.
+            // Пишем отдельный журнал PROBE_CRASH и просто перезапускаем такой процесс при
+            // следующей операции.
+            if (isAuxiliaryProcess()) {
+                runCatching { writeAuxiliaryReport(app.applicationContext, thread, error) }
+                runCatching { android.os.Process.killProcess(android.os.Process.myPid()) }
+                kotlin.system.exitProcess(11)
+                return@setDefaultUncaughtExceptionHandler
+            }
             runCatching { writeReport(app.applicationContext, thread, error) }
             // v1.7.5: НЕ вызываем прежний обработчик. Android по умолчанию показывает диалог
             // только для Java-крашей и молча завершает процесс при нативном падении (SIGSEGV/
@@ -51,6 +61,36 @@ object CrashGuard {
     }
 
     private fun crashFile(ctx: Context) = File(ctx.filesDir, FILE_NAME)
+
+    private fun isAuxiliaryProcess(): Boolean = runCatching {
+        val name = if (Build.VERSION.SDK_INT >= 28) {
+            android.app.Application.getProcessName()
+        } else {
+            File("/proc/self/cmdline").readText().trim('\u0000', '\n')
+        }.orEmpty()
+        name.endsWith(":probe")
+    }.getOrDefault(false)
+
+    /** Краткий отчёт о сбое вспомогательного процесса — попадает в журнал как PROBE_CRASH. */
+    private fun writeAuxiliaryReport(ctx: Context, thread: Thread, error: Throwable) {
+        runCatching {
+            val stack = StringWriter().also { sw ->
+                PrintWriter(sw).use { error.printStackTrace(it) }
+            }.toString()
+            val stamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+            val f = File(ctx.filesDir, "probe_crash.log")
+            if (f.length() > 24_000) f.writeText("")
+            f.appendText("=== PROBE_CRASH $stamp ===\n")
+            f.appendText("thread=${thread.name}\n")
+            f.appendText(stack.take(6000) + "\n\n")
+        }
+    }
+
+    /** Читает (и очищает) журнал сбоев вспомогательного процесса. */
+    fun consumeAuxReport(ctx: Context): String = runCatching {
+        val f = File(ctx.filesDir, "probe_crash.log")
+        if (!f.exists()) "" else f.readText().also { f.delete() }
+    }.getOrDefault("")
 
     private fun writeReport(ctx: Context, thread: Thread, error: Throwable) {
         lastCrashAtMs = System.currentTimeMillis()

@@ -32,6 +32,56 @@ object VeloxPrefs {
     const val BATCH_PROBE_BASE_PORT = 24200
     const val SEED_PROBE_BASE_PORT = 24320
 
+    /**
+     * v1.7.6 — КРИТИЧНО: у каждого процесса свой диапазон портов.
+     *
+     * Проверочное ядро поднимает десятки локальных портов, начиная с base. Пока проверка шла в
+     * процессе приложения, все её порты были в 24200+. Теперь проверка живёт в `:probe`, но
+     * диапазон остался прежним — и проверочное ядро отбирало порты у `:vpn`, из-за чего туннель
+     * не поднимался, а проверка рапортовала «0 узлов». Это и была причина «ВПН не подключается».
+     * Каждому процессу — свой блок из 512 портов, пересечений быть не может.
+     */
+    private const val PROBE_PORT_WINDOW = 512
+
+    /** Смещение диапазона портов для текущего процесса (0 = UI, 1 = `:probe`, 2 = `:vpn`). */
+    fun probeBasePort(batch: Boolean): Int {
+        val offset = when {
+            currentProcessNameSuffix() == ":probe" -> PROBE_PORT_WINDOW
+            currentProcessNameSuffix() == ":vpn" -> PROBE_PORT_WINDOW * 2
+            else -> 0
+        }
+        return (if (batch) BATCH_PROBE_BASE_PORT else SEED_PROBE_BASE_PORT) + offset
+    }
+
+    /**
+     * v1.7.6 — маркер «идёт подключение» общий для всех процессов (файл в filesDir).
+     * Проверка серверов читает его и мгновенно сворачивается, чтобы не конкурировать с туннелем
+     * за локальный SOCKS-порт и ядро. Метка живёт 3 минуты — если процесс упал, она не залипнет.
+     */
+    private fun connectMarkerFile(ctx: Context) = java.io.File(ctx.filesDir, "vpn_connecting.marker")
+
+    fun markConnecting(ctx: Context) {
+        runCatching { connectMarkerFile(ctx).writeText(System.currentTimeMillis().toString()) }
+    }
+
+    fun clearConnecting(ctx: Context) {
+        runCatching { connectMarkerFile(ctx).delete() }
+    }
+
+    fun isConnecting(ctx: Context): Boolean = runCatching {
+        val f = connectMarkerFile(ctx)
+        f.exists() && System.currentTimeMillis() - f.lastModified() < 180_000L
+    }.getOrDefault(false)
+
+    private fun currentProcessNameSuffix(): String = runCatching {
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            android.app.Application.getProcessName()
+        } else {
+            // API 24–27: читаем из /proc/self/cmdline (дешёво и без исключений)
+            java.io.File("/proc/self/cmdline").readText().trim('\u0000', '\n')
+        }.orEmpty().removePrefix("app.velox.vpn")
+    }.getOrDefault("")
+
     private fun settingsFile(ctx: Context) = File(ctx.applicationContext.filesDir, "velox_settings.json")
     private fun runtimeFile(ctx: Context) = File(ctx.applicationContext.filesDir, "vpn_runtime.json")
     private fun socksAuthFile(ctx: Context) = File(ctx.applicationContext.filesDir, "socks_session.json")

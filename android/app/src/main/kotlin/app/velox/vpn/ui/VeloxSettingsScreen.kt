@@ -455,7 +455,7 @@ internal fun SettingsTabContent(
         item {
             SettingsCard(title = "Подробные логи и о приложении") {
                 Text(
-                    text = "VeloxVPN 1.7.5 · Ядро xray-rust 0.10.0 + velox-engine (100% Rust)\n" +
+                    text = "VeloxVPN 1.7.6 · Ядро xray-rust 0.10.0 + velox-engine (100% Rust)\n" +
                         "Двойной канал 2× (0 мс обрыва) · резерв: та же страна → Германия/США · 0% серверов РФ\n" +
                         "KeepAlive 28с + tcpUserTimeout 15с (анти-разрыв) · 250+ сервисов · 12 проверок · YouTube 0%\n" +
                         "22+ страны · Reality (PQ) / XHTTP / Hysteria 2 / Trojan / VMess / SS2022 / WG / WARP MASQUE · Android 7.0–16",

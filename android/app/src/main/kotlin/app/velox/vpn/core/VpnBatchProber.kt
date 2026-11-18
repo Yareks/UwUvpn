@@ -61,11 +61,15 @@ object VpnBatchProber {
         shouldAbort: (() -> Boolean)? = null,
         onProgress: ((LiveProgressUpdate) -> Unit)? = null,
     ): Int {
+        // v1.7.6: подключение имеет приоритет — проверка не отбирает порты и ядро у туннеля
+        if (VeloxPrefs.isConnecting(context)) {
+            return 0
+        }
         if (shouldAbort?.invoke() == true) return 0
         if (!running.compareAndSet(false, true)) return 0
         try {
             VeloxNative.reloadFromDisk(context)
-            val basePort = VeloxPrefs.SEED_PROBE_BASE_PORT
+            val basePort = VeloxPrefs.probeBasePort(batch = false)
             val prepRaw = VeloxNative.prepareSeedQuickProbe(
                 targetRegion = settings.region,
                 whitelistMode = settings.whitelistMode,
@@ -137,6 +141,10 @@ object VpnBatchProber {
         shouldAbort: (() -> Boolean)? = null,
         onProgress: ((LiveProgressUpdate) -> Unit)? = null,
     ): BatchRefreshOutcome {
+        // v1.7.6: подключение имеет приоритет — проверка не отбирает порты и ядро у туннеля
+        if (VeloxPrefs.isConnecting(context)) {
+            return BatchRefreshOutcome(ok = false, error = "Идёт подключение — проверка отложена")
+        }
         if (!running.compareAndSet(false, true)) {
             return BatchRefreshOutcome(ok = false, error = "Проверка уже выполняется")
         }
@@ -170,7 +178,7 @@ object VpnBatchProber {
                 onProgress = onProgress,
             )
 
-            val basePort = VeloxPrefs.BATCH_PROBE_BASE_PORT
+            val basePort = VeloxPrefs.probeBasePort(batch = true)
             val prepRaw = VeloxNative.prepareVpnProbeBatch(
                 targetRegion = settings.region,
                 whitelistMode = settings.whitelistMode,
@@ -288,6 +296,10 @@ object VpnBatchProber {
         settings: AppSettings,
         onProgress: ((LiveProgressUpdate) -> Unit)? = null,
     ): BatchRefreshOutcome {
+        // v1.7.6: подключение имеет приоритет — проверка не отбирает порты и ядро у туннеля
+        if (VeloxPrefs.isConnecting(context)) {
+            return BatchRefreshOutcome(ok = false, error = "Идёт подключение — проверка отложена")
+        }
         val rotation = listOf(
             listOf("FI", "NL", "US"),
             listOf("DE", "WL", "JP"),
@@ -355,6 +367,10 @@ object VpnBatchProber {
         vpnService: VpnService? = null,
         onProgress: ((LiveProgressUpdate) -> Unit)? = null,
     ): BatchRefreshOutcome {
+        // v1.7.6: подключение имеет приоритет — проверка не отбирает порты и ядро у туннеля
+        if (VeloxPrefs.isConnecting(context)) {
+            return BatchRefreshOutcome(ok = false, error = "Идёт подключение — проверка отложена")
+        }
         if (!running.compareAndSet(false, true)) {
             return BatchRefreshOutcome(ok = false, error = "Подождите окончания текущей проверки")
         }
@@ -362,7 +378,7 @@ object VpnBatchProber {
         var poller: Thread? = null
         try {
             VeloxNative.reloadFromDisk(context)
-            val basePort = VeloxPrefs.BATCH_PROBE_BASE_PORT
+            val basePort = VeloxPrefs.probeBasePort(batch = true)
             safeProgress(onProgress,
                 LiveProgressUpdate(
                     stageIndex = 1,
@@ -444,7 +460,7 @@ object VpnBatchProber {
             var probeCore: XrayCore? = null
             try {
                 VeloxNative.reloadFromDisk(context)
-                val basePort = VeloxPrefs.SEED_PROBE_BASE_PORT
+                val basePort = VeloxPrefs.probeBasePort(batch = false)
                 val prep = JSONObject(
                     VeloxNative.prepareDeltaRevalidateBatch(basePort, settings.fragmentTls)
                 )

@@ -47,12 +47,20 @@ class VeloxProbeService : Service() {
         const val MODE_REFRESH = "refresh"
         const val MODE_DISCOVER = "discover"
         const val MODE_CUSTOM = "custom"
+        const val MODE_SUB_SYNC = "sub_sync"
+        const val MODE_IMPORT = "import"
+
+        /** Доп. параметры для режимов «обновить подписку» / «импорт ссылки». */
+        const val EXTRA_URL = "url"
+        const val EXTRA_KIND = "kind"
 
         /** UI-хуки: прогресс и завершение приходят широковещательно (процессы разные!). */
-        fun run(context: Context, mode: String) {
+        fun run(context: Context, mode: String, url: String = "", kind: String = "auto") {
             val i = Intent(context, VeloxProbeService::class.java)
                 .setAction(ACTION_RUN)
                 .putExtra(EXTRA_MODE, mode)
+                .putExtra(EXTRA_URL, url)
+                .putExtra(EXTRA_KIND, kind)
             try {
                 ContextCompat.startForegroundService(context, i)
             } catch (_: Throwable) {
@@ -96,14 +104,22 @@ class VeloxProbeService : Service() {
             return START_NOT_STICKY
         }
         val mode = intent?.getStringExtra(EXTRA_MODE) ?: MODE_REFRESH
-        promoteForeground(if (mode == MODE_DISCOVER) "Поиск новых серверов…" else "Проверка серверов…")
+        val url = intent?.getStringExtra(EXTRA_URL).orEmpty()
+        val kind = intent?.getStringExtra(EXTRA_KIND) ?: "auto"
+        val title = when (mode) {
+            MODE_DISCOVER -> "Поиск новых серверов…"
+            MODE_SUB_SYNC -> "Обновление подписки…"
+            MODE_IMPORT -> "Загрузка подписки / ключа…"
+            else -> "Проверка серверов…"
+        }
+        promoteForeground(title)
         if (job?.isActive != true) {
-            job = scope.launch { runProbe(mode) }
+            job = scope.launch { runProbe(mode, url, kind) }
         }
         return START_STICKY
     }
 
-    private suspend fun runProbe(mode: String) {
+    private suspend fun runProbe(mode: String, url: String = "", kind: String = "auto") {
         val settings = VeloxPrefs.loadSettings(this)
         val progress: (LiveProgressUpdate) -> Unit = { upd ->
             runCatching {
@@ -119,6 +135,30 @@ class VeloxProbeService : Service() {
             }
         }
         runCatching { VeloxNative.logInfo(this, "PROBE", "Процесс проверки запущен (mode=$mode): ${regionTitleRu(settings.region)}") }
+
+        // v1.7.6: обновление/импорт подписки — самая тяжёлая операция после проверки узлов
+        // (расшифровка Happ crypt0..crypt5, разбор Remnawave/Marzban/3x-ui). Раньше это шло в
+        // процессе приложения и его падение выглядело как «краш при обновлении подписки».
+        if (mode == MODE_SUB_SYNC || mode == MODE_IMPORT) {
+            val activeSocks = VeloxPrefs.resolveActiveLocalSocksPort(this)
+            val raw = runCatching {
+                VeloxNative.reloadFromDisk(this)
+                VeloxNative.syncHwidConfig(this, settings.sendHwid)
+                if (mode == MODE_SUB_SYNC) {
+                    VeloxNative.syncSubscription(url, settings.tgMaxRttMs, activeSocks)
+                } else {
+                    VeloxNative.addCustomItem(url, kind, settings.tgMaxRttMs)
+                }
+            }.getOrElse { e -> """{"ok":false,"error":"${VpnBatchProber.formatThrowable(e).take(180)}"}""" }
+
+            val obj = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
+            VeloxNative.trimMemoryIfLoaded()
+            // Результат целиком (включая subName/importedCount/needsCustomProbe) — для UI
+            runCatching { java.io.File(filesDir, "probe_result.json").writeText(obj.toString()) }
+            val ok = obj.optBoolean("ok", false)
+            finishWith(ok, if (ok) obj.optString("message", "Готово") else obj.optString("error", "Не удалось"))
+            return
+        }
 
         val result = when (mode) {
             MODE_DISCOVER -> runCatching { VpnBatchProber.discoverMoreConnectionsBlocking(this, settings, progress) }

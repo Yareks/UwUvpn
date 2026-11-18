@@ -189,6 +189,15 @@ class MainActivity : ComponentActivity() {
         StartupTrace.mark(this, "onCreate: start")
         crashReportText = runCatching { CrashGuard.consumeReport(this) }.getOrDefault("")
         safeMode = crashReportText.isNotBlank()
+        // v1.7.6: сбои вспомогательного процесса проверки — только в журнал, БЕЗ безопасного режима
+        runCatching {
+            val aux = CrashGuard.consumeAuxReport(this)
+            if (aux.isNotBlank()) {
+                aux.lineSequence().take(60).forEach { line ->
+                    if (line.isNotBlank()) VeloxNative.logWarn(this, "PROBE_CRASH", line.take(300))
+                }
+            }
+        }
         if (safeMode) {
             CrashGuard.appendPlainLog(this, "--- safe mode after crash ---\n" + crashReportText.take(6000))
             runCatching { VeloxNative.logErr(this, "CRASH", "Прошлый запуск завершился сбоем (безопасный режим):\n" + crashReportText.take(6000)) }
@@ -510,6 +519,11 @@ class MainActivity : ComponentActivity() {
 
     private fun startVpnWithConsent(forceRefresh: Boolean = false) {
         cancelBgSyncForUserAction()
+        // v1.7.6: подключение приоритетнее проверки — гасим фоновый подбор, чтобы он не
+        // конкурировал за порты/ядро (была причина «ВПН не подключается» после 1.7.5).
+        VeloxProbeService.stop(this)
+        isRefreshingVpn = false
+        manualRefreshProgress = null
         if (!vpnRefreshDelegated) {
             isRefreshingVpn = false
             manualRefreshProgress = null
@@ -787,14 +801,9 @@ class MainActivity : ComponentActivity() {
         )
         val progressCb = makeUiProgressCallback()
         launchGuarded {
-            VeloxNative.reloadFromDisk(this@MainActivity)
-            VeloxNative.syncHwidConfig(this@MainActivity, settingsState.sendHwid)
-            // Load active authenticated 127.0.0.1:10808 creds if VPN is CONNECTED so blocked panel URLs import seamlessly
-            val _activeSocks = VeloxPrefs.resolveActiveLocalSocksPort(this@MainActivity)
-            val resRaw = runCatching {
-                VeloxNative.addCustomItem(raw, kindHint, settingsState.tgMaxRttMs)
-            }.getOrElse { e -> """{"ok":false,"error":"${e.message}"}""" }
-            val obj = runCatching { JSONObject(resRaw) }.getOrDefault(JSONObject())
+            // v1.7.6: импорт (Happ crypt0..crypt5 / Remnawave / 3x-ui / подписка) — в `:probe`.
+            // Раньше падение в этом пути закрывало приложение («краш при обновлении подписки»).
+            val obj = runInProbeProcess(VeloxProbeService.MODE_IMPORT, raw, kindHint)
             val ok = obj.optBoolean("ok", false)
             val msg = if (ok) {
                 obj.optString("message", "Успешно импортировано")
@@ -852,19 +861,55 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * v1.7.6: тяжёлые операции с подпиской (обновление/импорт: расшифровка Happ, разбор
+     * Remnawave/Marzban) выполняются в процессе `:probe`. Если он падает, приложение остаётся
+     * живым, а пользователь видит внятную ошибку вместо закрытия.
+     * Возвращает JSON-результат операции (тот же контракт, что у нативных вызовов).
+     */
+    private suspend fun runInProbeProcess(
+        mode: String,
+        url: String = "",
+        kind: String = "auto",
+        timeoutMin: Int = 3,
+    ): org.json.JSONObject {
+        val finished = kotlinx.coroutines.CompletableDeferred<Boolean>()
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                finished.complete(intent?.getBooleanExtra("ok", false) == true)
+            }
+        }
+        ContextCompat.registerReceiver(
+            this, receiver,
+            IntentFilter(VeloxPrefs.ACTION_PROBE_FINISHED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        return try {
+            VeloxProbeService.run(this, mode, url, kind)
+            val answered = withTimeoutOrNull(timeoutMin * 60_000L) { finished.await() }
+            if (answered == null) {
+                VeloxProbeService.stop(this)
+                org.json.JSONObject().put("ok", false)
+                    .put("error", "Операция не завершилась — попробуйте ещё раз")
+            } else {
+                VeloxProbeService.lastResult(this) ?: org.json.JSONObject().put("ok", false)
+            }
+        } catch (t: Throwable) {
+            org.json.JSONObject().put("ok", false)
+                .put("error", VpnBatchProber.formatThrowable(t).take(140))
+        } finally {
+            runCatching { unregisterReceiver(receiver) }
+        }
+    }
+
     private fun handleSyncSource(url: String) {
         if (url.isBlank() || isBusyImport) return
         cancelBgSyncForUserAction()
         isBusyImport = true
         showSnack("Обновляю подписку…")
         launchGuarded {
-            VeloxNative.reloadFromDisk(this@MainActivity)
-            VeloxNative.syncHwidConfig(this@MainActivity, settingsState.sendHwid)
-            val activeSocks = VeloxPrefs.resolveActiveLocalSocksPort(this@MainActivity)
-            val resRaw = runCatching {
-                VeloxNative.syncSubscription(url, settingsState.tgMaxRttMs, activeSocks)
-            }.getOrElse { e -> """{"ok":false,"error":"${e.message}"}""" }
-            val obj = runCatching { JSONObject(resRaw) }.getOrDefault(JSONObject())
+            // v1.7.6: тяжёлый разбор подписки — в изолированном процессе `:probe`
+            val obj = runInProbeProcess(VeloxProbeService.MODE_SUB_SYNC, url)
             val ok = obj.optBoolean("ok", false)
             val msg = if (ok) {
                 obj.optString("message", "Подписка обновлена")

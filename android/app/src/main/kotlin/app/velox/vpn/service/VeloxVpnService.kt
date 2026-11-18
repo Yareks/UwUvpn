@@ -484,6 +484,10 @@ class VeloxVpnService : XrayVpnService() {
         connectJob?.cancel()
         monitorJob?.cancel()
 
+        // v1.7.6: единый (межпроцессный) маркер «идёт подключение» — отдельный процесс проверки
+        // серверов увидит его и немедленно свернётся, не отбирая порты и ядро у туннеля.
+        VeloxPrefs.markConnecting(this)
+
         connectJob = scope.launch {
             val startedMs = System.currentTimeMillis()
             val settings = VeloxPrefs.loadSettings(this@VeloxVpnService)
@@ -503,7 +507,7 @@ class VeloxVpnService : XrayVpnService() {
                 VeloxNative.logInfo(
                     this@VeloxVpnService,
                     "VPN",
-                    "=== Старт v1.7.5: $regionLabel | 2×Резерв=${if (settings.dualChannel) "ВКЛ" else "выкл"} | " +
+                    "=== Старт v1.7.6: $regionLabel | 2×Резерв=${if (settings.dualChannel) "ВКЛ" else "выкл"} | " +
                         "БС=${if (settings.whitelistMode) "ВКЛ" else "выкл"} | YT0%=${if (settings.adblockYoutube) "ВКЛ" else "выкл"} | " +
                         "Фрагм=${if (settings.fragmentTls) "ВКЛ" else "выкл"} | $netDesc ==="
                 )
@@ -661,6 +665,9 @@ class VeloxVpnService : XrayVpnService() {
 
                     if (startedState.isSuccess) {
                         val connectedState = startedState.getOrThrow()
+                        VeloxPrefs.clearConnecting(this@VeloxVpnService)
+                        // v1.7.6: прежний фоновый подбор больше не нужен — туннель уже поднят
+                        VeloxProbeService.stop(this@VeloxVpnService)
                         waitingForPhysicalNet = false
                         publishState(connectedState, force = true)
                         updateConnectedNotification(connectedState, force = true)
@@ -1207,6 +1214,7 @@ class VeloxVpnService : XrayVpnService() {
     }
 
     private fun finishWithError(message: String, keepWaitingForNetwork: Boolean) {
+        VeloxPrefs.clearConnecting(this)
         safeStopCoreAndTun()
         if (keepWaitingForNetwork) {
             waitingForPhysicalNet = true
