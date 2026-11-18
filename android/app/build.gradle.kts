@@ -14,12 +14,14 @@ android {
         // Supports Android 7.0 (API 24) through Android 16, explicitly optimized for Android 12 (API 31/32)
         minSdk = 24
         targetSdk = 35
-        versionCode = 111
-        versionName = "1.7.4"
+        versionCode = 112
+        versionName = "1.7.5"
 
         ndk {
             // Covers 100% of 64-bit and 32-bit ARM Android smartphones while keeping APK compact
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            // Common SIMD paths in the native cores need at least baseline ARMv8-A.
+            // (Устройства без NEON на arm64 не существуют, так что это безопасно.)
         }
 
         resourceConfigurations += listOf("ru", "en")
@@ -80,8 +82,11 @@ android {
 
     packaging {
         jniLibs {
-            // Deflate-compress stripped 16 KiB-aligned Rust .so libraries -> compact APK!
-            useLegacyPackaging = true
+            // v1.7.5: НЕ сжимаем .so в APK. Раньше библиотеки упаковывались deflate-сжатыми
+            // (`useLegacyPackaging = true`), и на части прошивок (Android 12 / OEM) распаковка
+            // 20-МБ `libxray_ffi.so` падала -> мгновенный краш при загрузке серверов/старте.
+            // Теперь библиотеки лежат в APK как есть (mmap напрямую), как во всех штатных сборках.
+            useLegacyPackaging = false
             // Prefer our app's jniLibs/libxray_ffi.so (xray-rust v0.10.0 + REALITY X.509 v1
             // sing-box/ShukaVPN/WL-RF SPKI CertificateVerify fix) over the upstream AAR copy!
             pickFirsts += "**/libxray_ffi.so"

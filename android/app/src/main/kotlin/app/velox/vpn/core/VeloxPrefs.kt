@@ -23,6 +23,10 @@ object VeloxPrefs {
     /** v1.7.2: runtime JSON is shipped inside the broadcast so the UI never touches disk. */
     const val EXTRA_RUNTIME_JSON = "runtime_json"
 
+    /** v1.7.5: прогресс/финал подбора серверов из изолированного процесса `:probe`. */
+    const val ACTION_PROBE_PROGRESS = "app.velox.vpn.action.PROBE_PROGRESS"
+    const val ACTION_PROBE_FINISHED = "app.velox.vpn.action.PROBE_FINISHED"
+
     const val LOCAL_VPN_SOCKS_PORT = 10808
     const val LOCAL_TG_BRIDGE_PORT = 10809
     const val BATCH_PROBE_BASE_PORT = 24200

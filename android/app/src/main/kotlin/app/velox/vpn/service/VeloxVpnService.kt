@@ -421,6 +421,16 @@ class VeloxVpnService : XrayVpnService() {
                 refreshPoolInBackground(silentStandbyMount = false)
                 return START_STICKY
             }
+            ACTION_ENSURE_PLAN -> {
+                // Если план готов — просто атомарно применяем; если нет — подбор в фоне,
+                // текущее соединение при этом НЕ разрывается.
+                if (currentState.phase == VpnPhase.CONNECTED) {
+                    hotReloadActiveTunnel(reason = "запрос применения плана")
+                } else if (!ensurePlanInBackground()) {
+                    launchConnectFlow(forceRefresh = false, autoHealing = false)
+                }
+                return START_STICKY
+            }
             else -> {
                 // Covers ACTION_CONNECT, Android Always-On VPN ("android.net.VpnService"), and restart
                 val forceRefresh = intent?.getBooleanExtra(EXTRA_FORCE_REFRESH, false) == true
@@ -493,7 +503,7 @@ class VeloxVpnService : XrayVpnService() {
                 VeloxNative.logInfo(
                     this@VeloxVpnService,
                     "VPN",
-                    "=== Старт v1.7.4: $regionLabel | 2×Резерв=${if (settings.dualChannel) "ВКЛ" else "выкл"} | " +
+                    "=== Старт v1.7.5: $regionLabel | 2×Резерв=${if (settings.dualChannel) "ВКЛ" else "выкл"} | " +
                         "БС=${if (settings.whitelistMode) "ВКЛ" else "выкл"} | YT0%=${if (settings.adblockYoutube) "ВКЛ" else "выкл"} | " +
                         "Фрагм=${if (settings.fragmentTls) "ВКЛ" else "выкл"} | $netDesc ==="
                 )
@@ -1255,6 +1265,39 @@ class VeloxVpnService : XrayVpnService() {
         if (!planOk) return false
         pendingHotSwap = false
         hotReloadActiveTunnel(reason = "применение новых настроек после подбора")
+        return true
+    }
+
+    /**
+     * v1.7.5: страховка на случай, когда изолированный процесс проверки недоступен (например,
+     * Xiaomi/Huawei не дают ему подняться). Тогда подбор идёт здесь — в процессе туннеля, где
+     * сбой ядра не убивает UI.
+     */
+    private fun ensurePlanInBackground(): Boolean {
+        if (poolRefreshJob?.isActive == true) return true
+        poolRefreshJob = scope.launch {
+            runCatching {
+                val plan = runCatching {
+                    JSONObject(buildTunJson(VeloxPrefs.loadSettings(this@VeloxVpnService), idlePowerSave = !isScreenInteractive))
+                }.getOrNull()
+                if (plan?.optBoolean("ok", false) == true) {
+                    applyPendingHotSwapIfReady()
+                    return@runCatching
+                }
+                val settings = VeloxPrefs.loadSettings(this@VeloxVpnService)
+                VpnBatchProber.refreshPoolBlocking(
+                    context = this@VeloxVpnService,
+                    settings = settings,
+                    vpnService = if (currentState.phase == VpnPhase.CONNECTED) this@VeloxVpnService else null,
+                    maxBatch = 44,
+                    onProgress = null,
+                )
+            }.onFailure { t ->
+                VeloxNative.logErr(this@VeloxVpnService, "PROBE", "Фоновый подбор не удался: ${VpnBatchProber.formatThrowable(t).take(160)}")
+            }
+            applyPendingHotSwapIfReady()
+            notifyEngineUpdated(null)
+        }
         return true
     }
 
@@ -2187,6 +2230,8 @@ class VeloxVpnService : XrayVpnService() {
         const val ACTION_DISCONNECT = "app.velox.vpn.action.DISCONNECT"
         const val ACTION_ROTATE = "app.velox.vpn.action.ROTATE"
         const val ACTION_HOT_RELOAD = "app.velox.vpn.action.HOT_RELOAD"
+        /** v1.7.5: применяет готовый план или подбирает серверы без разрыва соединения. */
+        const val ACTION_ENSURE_PLAN = "app.velox.vpn.action.ENSURE_PLAN"
         const val ACTION_REFRESH_POOL = "app.velox.vpn.action.REFRESH_POOL"
         const val EXTRA_FORCE_REFRESH = "force_refresh"
 
@@ -2220,6 +2265,17 @@ class VeloxVpnService : XrayVpnService() {
             val app = context.applicationContext
             runCatching {
                 app.startService(Intent(app, VeloxVpnService::class.java).setAction(ACTION_HOT_RELOAD))
+            }
+        }
+
+        /** Применить/подобрать план без разрыва (используется, когда UI-процесс не может зондировать). */
+        fun requestEnsurePlan(context: Context) {
+            val app = context.applicationContext
+            runCatching {
+                ContextCompat.startForegroundService(
+                    app,
+                    Intent(app, VeloxVpnService::class.java).setAction(ACTION_ENSURE_PLAN)
+                )
             }
         }
 

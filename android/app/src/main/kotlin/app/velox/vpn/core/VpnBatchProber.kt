@@ -41,6 +41,16 @@ object VpnBatchProber {
     fun isRunning(): Boolean = running.get()
 
     /**
+     * v1.7.5: колбэки прогресса вызываются из фоновых потоков и из нативного кода. ЛЮБОЕ
+     * исключение отсюда раньше всплывало в служебный поток (Native/Thread) и убивало процесс —
+     * ровно в момент «идёт загрузка серверов». Теперь они изолированы.
+     */
+    private fun safeProgress(cb: ((LiveProgressUpdate) -> Unit)?, upd: LiveProgressUpdate) {
+        if (cb == null) return
+        runCatching { cb(upd) }
+    }
+
+    /**
      * Lightning-fast (~3.8s) parallel probe of bundled seed nodes on the user's real ISP/network.
      * Returns number of live verified nodes (`0` means skip straight to full live refresh!).
      */
@@ -69,7 +79,7 @@ object VpnBatchProber {
             val count = prep.optInt("count", 0)
             val cfg = prep.getString("probeConfigJson")
 
-            onProgress?.invoke(
+            safeProgress(onProgress,
                 LiveProgressUpdate(
                     stageIndex = 1,
                     stageTotal = 3,
@@ -135,7 +145,7 @@ object VpnBatchProber {
         var poller: Thread? = null
         try {
             VeloxNative.reloadFromDisk(context)
-            onProgress?.invoke(
+            safeProgress(onProgress,
                 LiveProgressUpdate(
                     stageIndex = 1,
                     stageTotal = 5,
@@ -183,7 +193,7 @@ object VpnBatchProber {
             val count = prep.optInt("count", 0)
             val rawConfig = prep.getString("probeConfigJson")
 
-            onProgress?.invoke(
+            safeProgress(onProgress,
                 LiveProgressUpdate(
                     stageIndex = 3,
                     stageTotal = 5,
@@ -353,7 +363,7 @@ object VpnBatchProber {
         try {
             VeloxNative.reloadFromDisk(context)
             val basePort = VeloxPrefs.BATCH_PROBE_BASE_PORT
-            onProgress?.invoke(
+            safeProgress(onProgress,
                 LiveProgressUpdate(
                     stageIndex = 1,
                     stageTotal = 3,
@@ -442,7 +452,7 @@ object VpnBatchProber {
                     val count = prep.optInt("count", 0)
                     val batchId = prep.getString("batchId")
                     val rawCfg = prep.getString("probeConfigJson")
-                    onProgress?.invoke(
+                    safeProgress(onProgress,
                         LiveProgressUpdate(
                             stageIndex = 1,
                             stageTotal = 2,
@@ -545,7 +555,7 @@ object VpnBatchProber {
                     lastEmitDone = snap.done
                     lastEmitEta = computedEta
                     runCatching {
-                        onProgress(
+                        onProgress?.invoke(
                             LiveProgressUpdate(
                                 stageIndex = snap.stageIdx,
                                 stageTotal = snap.stageTotal,

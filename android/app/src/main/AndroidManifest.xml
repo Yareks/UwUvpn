@@ -104,6 +104,18 @@
                 android:value="vpn_tunnel_service" />
         </service>
 
+        <!-- v1.7.5: подбор/проверка серверов в ОТДЕЛЬНОМ процессе — падение ядра при проверке
+             больше не закрывает приложение (UI остаётся и показывает ошибку) -->
+        <service
+            android:name=".service.VeloxProbeService"
+            android:process=":probe"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="vpn_server_pool_probing" />
+        </service>
+
         <!-- Shares isolated :vpn native heap (zero duplicate UI RAM when screen is off) -->
         <service
             android:name=".service.TgBridgeService"

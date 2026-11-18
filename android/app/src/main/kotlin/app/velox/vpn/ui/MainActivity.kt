@@ -30,6 +30,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import app.velox.vpn.core.AppSettings
 import app.velox.vpn.core.CrashGuard
+import app.velox.vpn.service.VeloxProbeService
+import app.velox.vpn.core.BatchRefreshOutcome
 import app.velox.vpn.core.StartupTrace
 import app.velox.vpn.core.EngineSnapshot
 import app.velox.vpn.core.InstalledAppInfo
@@ -51,6 +53,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -154,6 +157,19 @@ class MainActivity : ComponentActivity() {
                 }
                 VeloxPrefs.ACTION_TG_BRIDGE_CHANGED -> {
                     refreshTgStatusAsync()
+                }
+                VeloxPrefs.ACTION_PROBE_PROGRESS -> {
+                    // v1.7.5: прогресс приходит из изолированного процесса `:probe`
+                    val upd = LiveProgressUpdate(
+                        stageIndex = intent.getIntExtra("stageIndex", 1),
+                        stageTotal = intent.getIntExtra("stageTotal", 5),
+                        percent = intent.getIntExtra("percent", 5),
+                        etaSeconds = intent.getIntExtra("etaSeconds", 10),
+                        statusLine = intent.getStringExtra("statusLine").orEmpty(),
+                        detailLine = intent.getStringExtra("detailLine").orEmpty(),
+                    )
+                    isRefreshingVpn = true
+                    manualRefreshProgress = upd
                 }
             }
         }
@@ -299,6 +315,7 @@ class MainActivity : ComponentActivity() {
             addAction(VeloxPrefs.ACTION_VPN_RUNTIME)
             addAction(VeloxPrefs.ACTION_ENGINE_UPDATED)
             addAction(VeloxPrefs.ACTION_TG_BRIDGE_CHANGED)
+            addAction(VeloxPrefs.ACTION_PROBE_PROGRESS)
         }
         ContextCompat.registerReceiver(
             this,
@@ -316,6 +333,56 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Emit progress cleanly to Compose state (throttled to <=4 Hz to avoid coroutine allocation churn). */
+    /**
+     * v1.7.5: тяжёлый подбор/проверка серверов выполняется в ОТДЕЛЬНОМ процессе `:probe`.
+     * Здесь только запускаем его и ждём широковещательный финал. Если процесс проверки упадёт,
+     * приложение останется живым и покажет понятную ошибку вместо «краша при загрузке серверов».
+     */
+    private suspend fun runPoolProbe(mode: String, timeoutMin: Int = 4): BatchRefreshOutcome {
+        val finished = kotlinx.coroutines.CompletableDeferred<BatchRefreshOutcome>()
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                val ok = intent?.getBooleanExtra("ok", false) == true
+                val msg = intent?.getStringExtra("message").orEmpty()
+                val payload = VeloxProbeService.lastResult(this@MainActivity)
+                finished.complete(
+                    BatchRefreshOutcome(
+                        ok = ok,
+                        testedCount = payload?.optInt("testedCount", 0) ?: 0,
+                        newlyVerified = payload?.optInt("newlyVerified", 0) ?: 0,
+                        liveAvailable = payload?.optInt("liveAvailable", 0) ?: 0,
+                        error = if (ok) "" else msg.ifBlank { "Не удалось обновить серверы" },
+                    )
+                )
+            }
+        }
+        ContextCompat.registerReceiver(
+            this, receiver,
+            IntentFilter(VeloxPrefs.ACTION_PROBE_FINISHED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        return try {
+            VeloxProbeService.run(this, mode)
+            val outcome = withTimeoutOrNull(timeoutMin * 60_000L) { finished.await() }
+            if (outcome != null) {
+                outcome
+            } else {
+                // v1.7.5: процесс проверки не ответил (не стартовал / убит системой) —
+                // перекладываем работу на процесс туннеля `:vpn`, где сбой ядра не убивает UI.
+                VeloxProbeService.stop(this)
+                VeloxVpnService.requestEnsurePlan(this)
+                BatchRefreshOutcome(
+                    ok = false,
+                    error = "Подбор серверов продолжается в фоне — прогресс появится автоматически",
+                )
+            }
+        } catch (t: Throwable) {
+            BatchRefreshOutcome(ok = false, error = VpnBatchProber.formatThrowable(t).take(140))
+        } finally {
+            runCatching { unregisterReceiver(receiver) }
+        }
+    }
+
     private fun makeUiProgressCallback(): (LiveProgressUpdate) -> Unit {
         var lastPostMs = 0L
         var lastPct = -1
@@ -371,12 +438,7 @@ class MainActivity : ComponentActivity() {
                 }
                 val progressCb = makeUiProgressCallback()
                 val res = runCatching {
-                    VpnBatchProber.smartDeltaSyncBlocking(
-                        context = this@MainActivity,
-                        settings = settingsState,
-                        shouldAbort = { abortBgSync || runtimeState.isActiveOrBusy },
-                        onProgress = { upd -> if (!abortBgSync) progressCb(upd) },
-                    )
+                    runPoolProbe(VeloxProbeService.MODE_REFRESH)
                 }.getOrNull()
                 VeloxNative.trimMemoryIfLoaded()
                 val snap = loadSnapshotBlocking(settingsState.region, reloadDisk = false)
@@ -576,13 +638,7 @@ class MainActivity : ComponentActivity() {
                 waited++
             }
             val curSettings = settingsState
-            val res = VpnBatchProber.refreshPoolBlocking(
-                context = this@MainActivity,
-                settings = curSettings,
-                vpnService = null,
-                maxBatch = 44,
-                onProgress = progressCb,
-            )
+            val res = runPoolProbe(VeloxProbeService.MODE_REFRESH)
             VeloxNative.trimMemoryIfLoaded()
             val snap = loadSnapshotBlocking(curSettings.region, reloadDisk = false)
             withContext(Dispatchers.Main) {
@@ -634,11 +690,7 @@ class MainActivity : ComponentActivity() {
                 waited++
             }
             val curSettings = settingsState
-            val res = VpnBatchProber.discoverMoreConnectionsBlocking(
-                context = this@MainActivity,
-                settings = curSettings,
-                onProgress = progressCb,
-            )
+            val res = runPoolProbe(VeloxProbeService.MODE_DISCOVER)
             VeloxNative.trimMemoryIfLoaded()
             val snap = loadSnapshotBlocking(settingsState.region, reloadDisk = false)
             withContext(Dispatchers.Main) {
@@ -781,11 +833,7 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 val probeRes = runCatching {
-                    VpnBatchProber.verifyCustomSubBlocking(
-                        context = this@MainActivity,
-                        settings = settingsState,
-                        onProgress = progressCb,
-                    )
+                    runPoolProbe(VeloxProbeService.MODE_CUSTOM)
                 }.getOrNull()
                 VeloxNative.trimMemoryIfLoaded()
                 val snap2 = loadSnapshotBlocking(settingsState.region, reloadDisk = false)
@@ -835,7 +883,7 @@ class MainActivity : ComponentActivity() {
             if (needsProbe && !runtimeState.isActiveOrBusy) {
                 withContext(Dispatchers.Main) { isRefreshingVpn = true }
                 val res = runCatching {
-                    VpnBatchProber.verifyCustomSubBlocking(this@MainActivity, settingsState)
+                    runPoolProbe(VeloxProbeService.MODE_CUSTOM)
                 }.getOrNull()
                 VeloxNative.trimMemoryIfLoaded()
                 val snap2 = loadSnapshotBlocking(settingsState.region, reloadDisk = false)

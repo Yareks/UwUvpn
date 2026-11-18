@@ -39,15 +39,14 @@ object CrashGuard {
     fun install(app: Context) {
         if (installed) return
         installed = true
-        val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             runCatching { writeReport(app.applicationContext, thread, error) }
-            if (previous != null) {
-                previous.uncaughtException(thread, error)
-            } else {
-                android.os.Process.killProcess(android.os.Process.myPid())
-                kotlin.system.exitProcess(10)
-            }
+            // v1.7.5: НЕ вызываем прежний обработчик. Android по умолчанию показывает диалог
+            // только для Java-крашей и молча завершает процесс при нативном падении (SIGSEGV/
+            // SIGABRT в .so). Теперь отчёт уже записан на диск, поэтому процесс завершаем сами —
+            // при следующем запуске приложение покажет причину и уйдёт в безопасный режим.
+            runCatching { android.os.Process.killProcess(android.os.Process.myPid()) }
+            kotlin.system.exitProcess(10)
         }
     }
 
