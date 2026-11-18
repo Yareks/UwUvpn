@@ -34,6 +34,9 @@ type app struct {
 	connected bool
 	busy      bool
 	detail    string
+	servers   []ui.ServerRow
+	active    string
+	exitIP    string
 	win       *ui.Window
 	tun       bool
 }
@@ -43,6 +46,7 @@ func main() {
 	wl := flag.Bool("wl", false, "«Белые списки РФ» (только разрешённые домены)")
 	tun := flag.Bool("tun", false, "включить TUN-режим (весь трафик компьютера)")
 	cli := flag.Bool("cli", false, "без GUI: поднять прокси и печатать статус")
+	selftest := flag.Bool("selftest", false, "самопроверка: источники, ядро, туннель, скорость")
 	port := flag.Int("port", 7890, "локальный порт (SOCKS5 + HTTP)")
 	limit := flag.Int("limit", 220, "максимум узлов после отбора")
 	flag.Parse()
@@ -69,24 +73,64 @@ func main() {
 		os.Exit(0)
 	}()
 
+	if *selftest {
+		os.Exit(a.runSelfTest(ctx, *limit))
+	}
 	if *cli {
 		a.runCLI(ctx, *limit)
 		return
 	}
 
-	a.win = &ui.Window{}
 	actions := ui.Actions{
 		OnConnect:   a.toggleConnect,
 		OnRefresh:   func() { go a.loadAndConnect(ctx, *limit, false) },
 		OnToggleTun: a.toggleTun,
 		OnQuit:      a.shutdown,
-		Status:      a.status,
+		OnPick:      a.pickServer,
+		View:        a.view,
+		OnUiReady:   func(w *ui.Window) {
+			a.mu.Lock()
+			a.win = w
+			a.mu.Unlock()
+		},
 	}
 	if err := ui.Run("VeloxVPN", actions); err != nil {
 		fmt.Fprintln(os.Stderr, "GUI недоступен:", err)
 		a.runCLI(ctx, *limit)
 	}
 	a.shutdown()
+}
+
+// view собирает текущее состояние для отрисовки окна.
+func (a *app) view() ui.View {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	state := "не подключено"
+	if a.busy {
+		state = "подготовка…"
+	} else if a.connected {
+		state = "подключено"
+	}
+	sub := a.detail
+	if sub == "" {
+		sub = fmt.Sprintf("Регион %s · порт %d · узлов %d", a.cfg.Region, a.cfg.MixedPort, len(a.nodes))
+	}
+	rows := make([]ui.ServerRow, len(a.servers))
+	copy(rows, a.servers)
+	var logLines []string
+	if sub != "" {
+		logLines = []string{sub}
+	}
+	return ui.View{
+		State:   state,
+		Sub:     sub,
+		ExitIP:  a.exitIP,
+		Region:  a.cfg.Region,
+		Tun:     a.cfg.EnableTun,
+		Busy:    a.busy,
+		Servers: rows,
+		Log:     logLines,
+	}
 }
 
 func (a *app) status() (string, string, bool, bool) {
@@ -217,14 +261,24 @@ func (a *app) loadAndConnect(ctx context.Context, limit int, connect bool) {
 
 	bestName, bestMs := "", 0
 	if delays, err := api.DelayGroup(ctx2, "VELOX", "", 5000); err == nil {
+		rows := make([]ui.ServerRow, 0, len(delays))
 		for _, d := range delays {
 			// служебные элементы группы пропускаем
 			if d.Name == "DIRECT" || d.Name == "AUTO" {
 				continue
 			}
-			bestName, bestMs = d.Name, d.Ms
-			break
+			rows = append(rows, ui.ServerRow{Name: d.Name, Ms: d.Ms})
+			if bestName == "" {
+				bestName, bestMs = d.Name, d.Ms
+			}
 		}
+		a.mu.Lock()
+		a.servers = rows
+		a.active = bestName
+		for i := range a.servers {
+			a.servers[i].Active = a.servers[i].Name == bestName
+		}
+		a.mu.Unlock()
 	}
 	if bestName != "" {
 		_ = api.SelectNode(ctx2, "VELOX", bestName)
@@ -242,6 +296,7 @@ func (a *app) loadAndConnect(ctx context.Context, limit int, connect bool) {
 
 	a.mu.Lock()
 	a.connected = connect
+	a.exitIP = exitIP
 	a.mu.Unlock()
 	a.setDetail(fmt.Sprintf("Подключено · %s (%d мс) · выход %s · %s · порт %d",
 		firstNonEmpty(bestName, nodes[0].Name), bestMs, exitIP, mode, a.cfg.MixedPort))
@@ -384,4 +439,138 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// pickServer переключает узел через локальный API ядра — мгновенно, без перезапуска.
+func (a *app) pickServer(name string) {
+	a.mu.Lock()
+	api := a.api
+	a.mu.Unlock()
+	if api == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	if err := api.SelectNode(ctx, "VELOX", name); err != nil {
+		a.setDetail("Не удалось выбрать сервер: " + err.Error())
+		return
+	}
+	a.mu.Lock()
+	a.active = name
+	for i := range a.servers {
+		a.servers[i].Active = a.servers[i].Name == name
+	}
+	a.mu.Unlock()
+	if ip, err := core.VerifyTraffic(ctx, a.cfg.MixedPort, 10*time.Second); err == nil {
+		a.mu.Lock()
+		a.exitIP = ip
+		a.mu.Unlock()
+		a.setDetail("Сервер: " + name + " · выход " + ip)
+	} else {
+		a.setDetail("Сервер " + name + ": трафик не проходит, выберите другой")
+	}
+}
+
+// runSelfTest проверяет всё по очереди и печатает отчёт. Возвращает код выхода:
+// 0 — всё в порядке, 1 — есть провал (удобно для скриптов и доверия к сборке).
+func (a *app) runSelfTest(ctx context.Context, limit int) int {
+	fmt.Println("=== VeloxVPN · самопроверка ===")
+	fail := 0
+	check := func(name string, ok bool, detail string) {
+		mark := "OK  "
+		if !ok {
+			mark = "FAIL"
+			fail++
+		}
+		fmt.Printf("[%s] %-34s %s\n", mark, name, detail)
+	}
+
+	// 1. Ядро рядом
+	enginePath, err := tunnel.EnginePath()
+	check("Ядро найдено", err == nil, firstNonEmpty(enginePath, fmt.Sprint(err)))
+
+	// 2. Источники
+	fmt.Println("\n-- загрузка источников --")
+	t0 := time.Now()
+	proxies, summary, err := sources.FetchAll(ctx, sources.Feeds(), 0)
+	fetchMs := time.Since(t0).Milliseconds()
+	okFeeds, totalNodes := 0, 0
+	for _, r := range summary {
+		if r.Err == "" && r.Count > 0 {
+			okFeeds++
+			totalNodes += r.Count
+		}
+	}
+	check("Источники отвечают", okFeeds >= len(summary)*3/4 && err == nil,
+		fmt.Sprintf("%d/%d OK, узлов %d, %d мс", okFeeds, len(summary), totalNodes, fetchMs))
+	check("Уникальных узлов > 200", len(proxies) > 200, fmt.Sprintf("%d узлов", len(proxies)))
+
+	// 3. Конфиг и ядро
+	fmt.Println("\n-- запуск ядра --")
+	var nodes []core.Node
+	for _, p := range proxies {
+		nodes = append(nodes, core.Node{Proxy: p, Name: fmt.Sprint(p["name"])})
+		if len(nodes) >= 150 {
+			break
+		}
+	}
+	yamlText, err := core.BuildConfig(nodes, a.cfg)
+	if err != nil {
+		check("Конфиг собирается", false, err.Error())
+		fmt.Println("\nПровалов:", fail)
+		return 1
+	}
+	check("Конфиг собирается", true, fmt.Sprintf("%d узлов, %d КБ", len(nodes), len(yamlText)/1024))
+
+	t1 := time.Now()
+	engine, err := tunnel.Start(ctx, yamlText)
+	startMs := time.Since(t1).Milliseconds()
+	if err != nil {
+		check("Ядро стартует", false, err.Error())
+		fmt.Println("\nПровалов:", fail)
+		return 1
+	}
+	defer engine.Stop()
+	check("Ядро стартует", true, fmt.Sprintf("%d мс", startMs))
+	check("Старт ядра < 1.5 с", startMs < 1500, fmt.Sprintf("%d мс", startMs))
+
+	// 4. Туннель: реальный выход
+	fmt.Println("\n-- проверка трафика --")
+	api := core.NewAPI(core.APIPort, core.Secret())
+	t2 := time.Now()
+	delays, derr := api.DelayGroup(ctx, "VELOX", "", 5000)
+	delayMs := time.Since(t2).Milliseconds()
+	alive := len(delays)
+	for _, d := range delays {
+		if d.Name == "DIRECT" || d.Name == "AUTO" {
+			alive--
+		}
+	}
+	check("Замер задержек", derr == nil && alive > 0,
+		fmt.Sprintf("живых %d, %d мс", alive, delayMs))
+
+	if alive > 0 {
+		best := ""
+		for _, d := range delays {
+			if d.Name != "DIRECT" && d.Name != "AUTO" {
+				best = d.Name
+				break
+			}
+		}
+		_ = api.SelectNode(ctx, "VELOX", best)
+		ip, verr := core.VerifyTraffic(ctx, a.cfg.MixedPort, 15*time.Second)
+		check("Трафик проходит через VPN", verr == nil, firstNonEmpty(ip, fmt.Sprint(verr)))
+		if verr == nil {
+			fmt.Println("     узел:", best)
+		}
+	}
+
+	// 5. Итог
+	fmt.Println()
+	if fail == 0 {
+		fmt.Println("ИТОГ: всё в порядке — приложение готово к работе")
+		return 0
+	}
+	fmt.Println("ИТОГ: провалов", fail, "— смотрите строки FAIL выше")
+	return 1
 }

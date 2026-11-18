@@ -166,9 +166,16 @@ func BuildConfig(nodes []Node, cfg Config) (string, error) {
 	}
 	root["dns"] = dns
 
+	// v1.0.2: не тянем geo-базы при старте (минус задержка и минус трафик).
+	// Всё нужное покрыто явными правилами доменов и CIDR.
+	root["geodata-mode"] = false
+	root["geo-auto-update"] = false
+
 	// Правила: РФ-домены напрямую, приватные сети — напрямую, остальное — через VELOX
 	rules := []string{
-		"GEOIP,PRIVATE,DIRECT",
+		// v1.0.2: без `GEOIP,PRIVATE` — этот тип правила заставляет ядро грузить MMDB
+		// (~8 МБ база + парсинг) ещё до готовности прокси. Приватные сети покрыты
+		// обычными CIDR-правилами, результат тот же, старт быстрее.
 		"DOMAIN-SUFFIX,local,DIRECT",
 		"IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
 		"IP-CIDR,172.16.0.0/12,DIRECT,no-resolve",

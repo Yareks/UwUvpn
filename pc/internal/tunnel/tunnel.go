@@ -5,10 +5,12 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -114,21 +116,22 @@ func Start(ctx context.Context, yamlText string) (*Engine, error) {
 	go scan(bufio.NewScanner(stdout))
 	go scan(bufio.NewScanner(stderr))
 
-	// ждём, пока ядро займёт порт или упадёт
-	deadline := time.Now().Add(8 * time.Second)
+	// v1.0.2: вместо угадывания по строкам лога — ждём реального признака готовности:
+	// занятый порт смешанного прокси и отвечающий API. Это точнее и обычно быстрее.
+	deadline := time.Now().Add(12 * time.Second)
+	mixedPort := mixeoPortFromConfig(yamlText)
 	for time.Now().Before(deadline) {
 		if cmd.ProcessState != nil {
 			break
 		}
-		if e.LogContains("start initial configuration") || e.LogContains("Mixed") ||
-			e.LogContains("listening") || e.LogContains("TUN") {
-			break
+		if portOpen(mixedPort) {
+			return e, nil
 		}
 		select {
 		case <-ctx.Done():
 			_ = e.Stop()
 			return nil, ctx.Err()
-		case <-time.After(120 * time.Millisecond):
+		case <-time.After(60 * time.Millisecond):
 		}
 	}
 	if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
@@ -168,3 +171,30 @@ func (e *Engine) Stop() error {
 
 // ConfPath — путь к активному конфигу (для отладки).
 func (e *Engine) ConfPath() string { return e.confPath }
+
+// portOpen — занят ли локальный порт (значит ядро уже слушает).
+func portOpen(port int) bool {
+	if port <= 0 {
+		return false
+	}
+	c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 120*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	return true
+}
+
+// mixeoPortFromConfig достаёт mixed-port из готового YAML без полного парсинга.
+func mixeoPortFromConfig(yamlText string) int {
+	for _, line := range strings.Split(yamlText, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "mixed-port:") {
+			v := strings.TrimSpace(strings.TrimPrefix(line, "mixed-port:"))
+			if n, err := strconv.Atoi(v); err == nil {
+				return n
+			}
+		}
+	}
+	return 0
+}
