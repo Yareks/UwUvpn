@@ -39,17 +39,25 @@ fn parse_query_map(u: &Url) -> HashMap<String, String> {
     map
 }
 
+/// v1.7.7 — КРИТИЧНО для Xray-core v26.10.21+ (ядро xray-rust 0.10.0).
+///
+/// Новое ядро требует X25519MLKEM768 key share в TLS ClientHello. Подписи браузеров
+/// `ios`, `edge`, `qq`, `android` его НЕ содержат, и ядро отвергает ВЕСЬ конфиг:
+///   `reality fingerprint "ios" has no X25519MLKEM768 key share`
+/// Из-за этого падало каждое подключение (probe при этом «видел» узлы живыми, потому что
+/// проверка идёт через TLS-хендшейк, а не через валидацию конфига).
+///
+/// Работают и со старыми, и с новыми серверами: `chrome`, `firefox`, `safari`, `random`.
+/// Поэтому «неизвестную» подпись больше нельзя молча подставлять как `ios`/`edge`/`qq` —
+/// только в безопасный `chrome`.
 fn normalize_fingerprint(fp: &str, is_reality: bool) -> &'static str {
     match fp.trim().to_ascii_lowercase().as_str() {
-        "chrome" => "chrome",
         "firefox" => "firefox",
         "safari" => "safari",
-        "ios" => "ios",
-        "qq" => "qq",
-        "edge" => "edge",
-        "android" if !is_reality => "android",
         "random" => "random",
-        "randomized" => "randomized",
+        "randomized" => "random",
+        "android" if !is_reality => "android",
+        // ios / edge / qq / chrome / любое неизвестное -> chrome (единственный, что есть везде)
         _ => "chrome",
     }
 }
@@ -3704,15 +3712,14 @@ pub fn build_production_tun_config_v17(
 
     // Direct outbound: prefer IPv4 dialing via the modern socket-option location
     // (legacy `settings.domainStrategy` is deprecated in xray-rust v0.10.0).
+    // v1.7.7: у `freedom` параметр domainStrategy удалён в Xray v26.x — ядро пишет
+    // «freedom domainStrategy is deprecated; its value was migrated to streamSettings.sockopt…»
+    // и отвергает конфиг. IPv4-предпочтение теперь задаётся только на уровне DNS
+    // (`queryStrategy: UseIPv4`), который уже настроен выше.
     outbounds.push(json!({
         "tag": "direct",
         "protocol": "freedom",
-        "settings": {},
-        "streamSettings": {
-            "sockopt": {
-                "domainStrategy": "UseIPv4"
-            }
-        }
+        "settings": {}
     }));
     outbounds.push(json!({
         "tag": "block",
@@ -3926,10 +3933,13 @@ pub fn build_production_tun_config_v17(
     dns_obj.insert("queryStrategy".into(), json!("UseIPv4"));
     dns_obj.insert(
         "fakeIp".into(),
+        // v1.7.7: `198.19.0.0/16` содержит 65534 пригодных адреса; ядро Xray v26.x отвергает
+        // конфиг, если poolSize доходит до этого значения («exceeds the 65534 usable
+        // addresses in ipv4Pool»). Берём 32766 — с большим запасом и без потери функций.
         json!({
             "enabled": true,
             "ipv4Pool": "198.19.0.0/16",
-            "poolSize": 65534,
+            "poolSize": 32766,
             "ttl": 45
         }),
     );

@@ -600,9 +600,12 @@ object VpnBatchProber {
         vpnService: VpnService?,
         label: String,
     ): XrayCore {
+        // v1.7.7: тот же санитайзер, что и для туннеля. Без него проверочное ядро работает на
+        // конфиге, который боевое ядро отвергает -> «серверы живые, но не подключаются».
+        val safeConfig = XrayConfigSanitizer.sanitize(configJson)
         val direct = runCatching {
             XrayCore.create(
-                configJson = configJson,
+                configJson = safeConfig,
                 vpnService = vpnService,
                 tunRuntimeProfile = XrayTunRuntimeProfile.LowMemory,
             )
@@ -616,7 +619,7 @@ object VpnBatchProber {
         val firstErr = formatThrowable(direct.exceptionOrNull())
         VeloxNative.logWarn(context, "XRAY", "[$label] Санитайзер конфига: $firstErr")
 
-        val root = JSONObject(configJson)
+        val root = JSONObject(safeConfig)
         val inbounds = root.getJSONArray("inbounds")
         val outbounds = root.getJSONArray("outbounds")
         val routingObj = root.getJSONObject("routing")

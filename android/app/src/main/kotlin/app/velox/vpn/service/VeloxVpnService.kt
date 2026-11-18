@@ -26,6 +26,7 @@ import app.velox.vpn.core.RuntimeProfileMode
 import app.velox.vpn.core.VeloxNative
 import app.velox.vpn.core.VeloxPrefs
 import app.velox.vpn.core.VpnBatchProber
+import app.velox.vpn.core.XrayConfigSanitizer
 import app.velox.vpn.core.VpnPhase
 import app.velox.vpn.core.VpnRuntimeState
 import app.velox.vpn.core.countryFlag
@@ -507,7 +508,7 @@ class VeloxVpnService : XrayVpnService() {
                 VeloxNative.logInfo(
                     this@VeloxVpnService,
                     "VPN",
-                    "=== Старт v1.7.6: $regionLabel | 2×Резерв=${if (settings.dualChannel) "ВКЛ" else "выкл"} | " +
+                    "=== Старт v1.7.7: $regionLabel | 2×Резерв=${if (settings.dualChannel) "ВКЛ" else "выкл"} | " +
                         "БС=${if (settings.whitelistMode) "ВКЛ" else "выкл"} | YT0%=${if (settings.adblockYoutube) "ВКЛ" else "выкл"} | " +
                         "Фрагм=${if (settings.fragmentTls) "ВКЛ" else "выкл"} | $netDesc ==="
                 )
@@ -1900,8 +1901,18 @@ class VeloxVpnService : XrayVpnService() {
         }.getOrNull().orEmpty().trim()
         // v1.7.3: ядро может не вернуть план (сбой JNI/OOM) — вместо падения JSONObject(null)
         // отдаём корректный «нет плана», и вызывающий код штатно уходит на подбор узлов.
-        return if (raw.startsWith("{") && raw.endsWith("}")) raw
-        else """{"ok":false,"error":"native returned no plan"}"""
+        if (!(raw.startsWith("{") && raw.endsWith("}"))) {
+            return """{"ok":false,"error":"native returned no plan"}"""
+        }
+        // v1.7.7: новое ядро Xray v26.x ОТВЕРГАЕТ весь конфиг из-за устаревших полей
+        // (fingerprint ios/edge/qq, freedom.domainStrategy, fakeIp.poolSize). Нормализуем
+        // план перед отдачей в XrayCore — иначе туннель не поднимается ни на одном узле.
+        val plan = runCatching { JSONObject(raw) }.getOrNull() ?: return raw
+        val cfg = plan.optString("configJson")
+        if (cfg.isNotBlank()) {
+            plan.put("configJson", XrayConfigSanitizer.sanitize(cfg))
+        }
+        return plan.toString()
     }
 
     private fun mapRuntimeProfile(mode: RuntimeProfileMode): XrayTunRuntimeProfile = when (mode) {
