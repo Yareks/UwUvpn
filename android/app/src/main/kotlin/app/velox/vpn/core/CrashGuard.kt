@@ -69,7 +69,12 @@ object CrashGuard {
                 .append(" (SDK ").append(Build.VERSION.SDK_INT).append(")\n")
             append("thread=").append(thread.name).append(" · abi=")
                 .append(Build.SUPPORTED_ABIS.firstOrNull().orEmpty()).append("\n")
-            append(stack.take(MAX_CHARS)).append("\n\n")
+            append(stack.take(MAX_CHARS)).append("\n")
+            val tail = runCatching { StartupTrace.tail(ctx, 40) }.getOrDefault("")
+            if (tail.isNotBlank()) {
+                append("--- последние шаги запуска ---\n").append(tail).append("\n")
+            }
+            append("\n")
         }
 
         val f = crashFile(ctx)

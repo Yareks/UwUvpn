@@ -19,11 +19,16 @@ class VeloxTileService : TileService() {
 
     override fun onStartListening() {
         super.onStartListening()
-        syncTile()
+        // v1.7.4: тайл живёт в основном процессе — его сбой закрывал всё приложение.
+        runCatching { syncTile() }
     }
 
     override fun onClick() {
         super.onClick()
+        runCatching { handleClick() }
+    }
+
+    private fun handleClick() {
         val rt = VeloxPrefs.loadRuntime(this)
         if (rt.isActiveOrBusy) {
             VeloxVpnService.requestStop(this)
@@ -45,7 +50,7 @@ class VeloxTileService : TileService() {
         } else {
             VeloxVpnService.startConnect(this)
         }
-        syncTile()
+        runCatching { syncTile() }
     }
 
     private fun syncTile() {

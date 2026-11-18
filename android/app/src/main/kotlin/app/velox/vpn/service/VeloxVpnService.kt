@@ -493,7 +493,7 @@ class VeloxVpnService : XrayVpnService() {
                 VeloxNative.logInfo(
                     this@VeloxVpnService,
                     "VPN",
-                    "=== Старт v1.7.3: $regionLabel | 2×Резерв=${if (settings.dualChannel) "ВКЛ" else "выкл"} | " +
+                    "=== Старт v1.7.4: $regionLabel | 2×Резерв=${if (settings.dualChannel) "ВКЛ" else "выкл"} | " +
                         "БС=${if (settings.whitelistMode) "ВКЛ" else "выкл"} | YT0%=${if (settings.adblockYoutube) "ВКЛ" else "выкл"} | " +
                         "Фрагм=${if (settings.fragmentTls) "ВКЛ" else "выкл"} | $netDesc ==="
                 )

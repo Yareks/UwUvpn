@@ -30,6 +30,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import app.velox.vpn.core.AppSettings
 import app.velox.vpn.core.CrashGuard
+import app.velox.vpn.core.StartupTrace
 import app.velox.vpn.core.EngineSnapshot
 import app.velox.vpn.core.InstalledAppInfo
 import app.velox.vpn.core.LiveProgressUpdate
@@ -93,6 +94,31 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * v1.7.4: ЛЮБАЯ ошибка в фоновой корутине Activity раньше убивала процесс — для пользователя
+     * это «краш через секунду после появления главного экрана». Теперь каждая задача запускается
+     * через этот помощник: исключение логируется, приложение продолжает работать.
+     */
+    private fun launchGuarded(
+        onMain: Boolean = false,
+        block: suspend kotlinx.coroutines.CoroutineScope.() -> Unit,
+    ): Job = lifecycleScope.launch(if (onMain) Dispatchers.Main else Dispatchers.IO) {
+        try {
+            block()
+        } catch (c: kotlinx.coroutines.CancellationException) {
+            throw c
+        } catch (t: Throwable) {
+            runCatching {
+                StartupTrace.mark(this@MainActivity, "bg-fail: ${t.javaClass.simpleName}: ${t.message?.take(120)}")
+                VeloxNative.logErr(
+                    this@MainActivity,
+                    "CRASH",
+                    "Сбой фоновой задачи UI (приложение продолжает работу): ${VpnBatchProber.formatThrowable(t)}"
+                )
+            }
+        }
+    }
+
     private val notifPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { /* Notification permission optional; VPN tunnel works either way */ }
@@ -144,6 +170,7 @@ class MainActivity : ComponentActivity() {
         // без нативного ядра) и включаем «безопасный режим»: тяжёлая инициализация и фоновая
         // синхронизация пропускаются, чтобы приложение гарантированно открылось и отчёт можно
         // было посмотреть и отправить.
+        StartupTrace.mark(this, "onCreate: start")
         crashReportText = runCatching { CrashGuard.consumeReport(this) }.getOrDefault("")
         safeMode = crashReportText.isNotBlank()
         if (safeMode) {
@@ -152,17 +179,22 @@ class MainActivity : ComponentActivity() {
         }
 
         settingsState = VeloxPrefs.loadSettings(this)
+        StartupTrace.mark(this, "onCreate: settings")
         runtimeState = VeloxPrefs.loadRuntime(this)
+        StartupTrace.mark(this, "onCreate: runtime")
         updateBatteryFlag()
         registerBusReceiver()
+        StartupTrace.mark(this, "onCreate: receivers")
         refreshEngineSnapshotAsync(reloadDisk = false, syncHwid = !safeMode)
+        StartupTrace.mark(this, "onCreate: snapshot-requested")
 
         val consumedDeepLink = handleIncomingDeepLink(intent)
         if (!consumedDeepLink && !safeMode) {
             triggerStartupSmartDeltaSync()
         }
+        StartupTrace.mark(this, "onCreate: background-sync-scheduled")
         if (safeMode) {
-            lifecycleScope.launch {
+            launchGuarded(onMain = true) {
                 delay(1200L)
                 showSnack("Прошлый запуск завершился сбоем — включён безопасный режим, отчёт сохранён в журнале")
             }
@@ -214,6 +246,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+        StartupTrace.mark(this, "onCreate: compose-set")
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -307,10 +340,10 @@ class MainActivity : ComponentActivity() {
     private fun triggerStartupSmartDeltaSync() {
         bgSyncJob?.cancel()
         abortBgSync = false
-        bgSyncJob = lifecycleScope.launch(Dispatchers.IO) {
+        bgSyncJob = launchGuarded {
             delay(550L)
-            if (abortBgSync || runtimeState.isActiveOrBusy) return@launch
-            if (!VeloxNative.hasPhysicalInternet(this@MainActivity)) return@launch
+            if (abortBgSync || runtimeState.isActiveOrBusy) return@launchGuarded
+            if (!VeloxNative.hasPhysicalInternet(this@MainActivity)) return@launchGuarded
 
             val cur = settingsState
             val snap0 = loadSnapshotBlocking(cur.region, reloadDisk = false)
@@ -382,8 +415,8 @@ class MainActivity : ComponentActivity() {
         if (engineSnapshot.tgProxies.size >= 8 && tgAge < 2700L) return
         if (!VeloxNative.hasPhysicalInternet(this)) return
 
-        lifecycleScope.launch(Dispatchers.IO) {
-            if (isRefreshingTg) return@launch
+        launchGuarded {
+            if (isRefreshingTg) return@launchGuarded
             withContext(Dispatchers.Main) { isRefreshingTg = true }
             try {
                 VeloxNative.ensureInitialized(this@MainActivity)
@@ -483,7 +516,7 @@ class MainActivity : ComponentActivity() {
         settingsState = next
 
         if (prev.sendHwid != next.sendHwid) {
-            lifecycleScope.launch(Dispatchers.IO) {
+            launchGuarded {
                 VeloxNative.syncHwidConfig(this@MainActivity, next.sendHwid)
                 val snap = loadSnapshotBlocking(next.region, reloadDisk = false)
                 withContext(Dispatchers.Main) {
@@ -536,7 +569,7 @@ class MainActivity : ComponentActivity() {
         }
 
         val progressCb = makeUiProgressCallback()
-        lifecycleScope.launch(Dispatchers.IO) {
+        launchGuarded {
             var waited = 0
             while (VpnBatchProber.isRunning() && waited < 10) {
                 delay(200L)
@@ -594,7 +627,7 @@ class MainActivity : ComponentActivity() {
             detailLine = "Reality · XHTTP · Hysteria2 · WARP MASQUE · БС-РФ",
         )
         val progressCb = makeUiProgressCallback()
-        lifecycleScope.launch(Dispatchers.IO) {
+        launchGuarded {
             var waited = 0
             while (VpnBatchProber.isRunning() && waited < 12) {
                 delay(200L)
@@ -629,7 +662,7 @@ class MainActivity : ComponentActivity() {
         isRefreshingTg = true
         val maxMs = settingsState.tgMaxRttMs
 
-        val poller = lifecycleScope.launch(Dispatchers.IO) {
+        val poller = launchGuarded {
             while (isActive) {
                 val st = TgBridgeStatus.fromJsonStr(VeloxNative.getTgStatus())
                 withContext(Dispatchers.Main) { tgStatusState = st }
@@ -637,7 +670,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        lifecycleScope.launch(Dispatchers.IO) {
+        launchGuarded {
             VeloxNative.ensureInitialized(this@MainActivity)
             VeloxNative.logInfo(this@MainActivity, "TG", "Запуск проверки прокси Telegram (порог ≤${maxMs}мс)")
             val activeSocks = VeloxPrefs.resolveActiveLocalSocksPort(this@MainActivity)
@@ -679,7 +712,7 @@ class MainActivity : ComponentActivity() {
             TgBridgeService.stop(this)
             showSnack("Умный прокси Telegram остановлен")
         }
-        lifecycleScope.launch {
+        launchGuarded(onMain = true) {
             delay(400L)
             refreshTgStatusAsync()
         }
@@ -701,7 +734,7 @@ class MainActivity : ComponentActivity() {
             }
         )
         val progressCb = makeUiProgressCallback()
-        lifecycleScope.launch(Dispatchers.IO) {
+        launchGuarded {
             VeloxNative.reloadFromDisk(this@MainActivity)
             VeloxNative.syncHwidConfig(this@MainActivity, settingsState.sendHwid)
             // Load active authenticated 127.0.0.1:10808 creds if VPN is CONNECTED so blocked panel URLs import seamlessly
@@ -776,7 +809,7 @@ class MainActivity : ComponentActivity() {
         cancelBgSyncForUserAction()
         isBusyImport = true
         showSnack("Обновляю подписку…")
-        lifecycleScope.launch(Dispatchers.IO) {
+        launchGuarded {
             VeloxNative.reloadFromDisk(this@MainActivity)
             VeloxNative.syncHwidConfig(this@MainActivity, settingsState.sendHwid)
             val activeSocks = VeloxPrefs.resolveActiveLocalSocksPort(this@MainActivity)
@@ -819,7 +852,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleRemoveSource(url: String) {
-        lifecycleScope.launch(Dispatchers.IO) {
+        launchGuarded {
             VeloxNative.reloadFromDisk(this@MainActivity)
             val raw = runCatching { VeloxNative.removeSource(url) }.getOrDefault("{}")
             val name = runCatching { JSONObject(raw).optString("name", "Подписка") }
@@ -833,7 +866,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleToggleSource(url: String, enabled: Boolean) {
-        lifecycleScope.launch(Dispatchers.IO) {
+        launchGuarded {
             VeloxNative.reloadFromDisk(this@MainActivity)
             VeloxNative.toggleSource(url, enabled)
             val snap = loadSnapshotBlocking(settingsState.region, reloadDisk = false)
@@ -846,7 +879,7 @@ class MainActivity : ComponentActivity() {
     private fun handleRegenerateWarp() {
         if (isBusyWarp) return
         isBusyWarp = true
-        lifecycleScope.launch(Dispatchers.IO) {
+        launchGuarded {
             VeloxNative.reloadFromDisk(this@MainActivity)
             val activeSocks = VeloxPrefs.resolveActiveLocalSocksPort(this@MainActivity)
             val raw = VeloxNative.regenerateWarp(activeSocks)
@@ -883,7 +916,7 @@ class MainActivity : ComponentActivity() {
     }.getOrDefault(emptyList())
 
     private fun handleClearDiagLogs(onCleared: (List<String>) -> Unit) {
-        lifecycleScope.launch(Dispatchers.IO) {
+        launchGuarded {
             VeloxNative.ensureInitialized(this@MainActivity)
             VeloxNative.clearDiagLogs()
             val fresh = loadDiagLogsBlocking()
@@ -995,7 +1028,7 @@ class MainActivity : ComponentActivity() {
         isCheckingServices = true
         val rt = VeloxPrefs.loadRuntime(this)
         val port = VeloxPrefs.resolveActiveLocalSocksPort(this)
-        lifecycleScope.launch(Dispatchers.IO) {
+        launchGuarded {
             val raw = runCatching { VeloxNative.checkServices(port) }.getOrDefault("{}")
             val parsed = ServicesCheckResult.fromJsonStr(raw)
             withContext(Dispatchers.Main) {
@@ -1036,7 +1069,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun loadInstalledAppsAsync(onLoaded: (List<InstalledAppInfo>) -> Unit) {
-        lifecycleScope.launch(Dispatchers.IO) {
+        launchGuarded {
             val pm = packageManager
             @Suppress("DEPRECATION")
             val pkgs = runCatching {
@@ -1071,13 +1104,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshEngineSnapshotAsync(reloadDisk: Boolean, syncHwid: Boolean = false) {
-        lifecycleScope.launch(Dispatchers.IO) {
+        launchGuarded {
             val cur = settingsState
             if (syncHwid) {
                 VeloxNative.syncHwidConfig(this@MainActivity, cur.sendHwid)
             }
             val snap = loadSnapshotBlocking(cur.region, reloadDisk)
-            val tg = TgBridgeStatus.fromJsonStr(VeloxNative.getTgStatus())
+            val tgRaw = runCatching { VeloxNative.getTgStatus() }.getOrNull().orEmpty()
+            val tg = if (tgRaw.isBlank()) TgBridgeStatus() else TgBridgeStatus.fromJsonStr(tgRaw)
             withContext(Dispatchers.Main) {
                 engineSnapshot = snap
                 tgStatusState = tg
@@ -1086,9 +1120,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshTgStatusAsync() {
-        lifecycleScope.launch(Dispatchers.IO) {
+        launchGuarded {
             VeloxNative.ensureInitialized(this@MainActivity)
-            val tg = TgBridgeStatus.fromJsonStr(VeloxNative.getTgStatus())
+            val tgRaw = runCatching { VeloxNative.getTgStatus() }.getOrNull().orEmpty()
+            val tg = if (tgRaw.isBlank()) TgBridgeStatus() else TgBridgeStatus.fromJsonStr(tgRaw)
             withContext(Dispatchers.Main) {
                 tgStatusState = tg
             }
@@ -1097,18 +1132,26 @@ class MainActivity : ComponentActivity() {
 
     /** Compact JNI snapshot: omits `outbound_json`, `raw_uri`, and log ring unless logs sheet is opened! */
     private fun loadSnapshotBlocking(region: String, reloadDisk: Boolean): EngineSnapshot {
-        if (reloadDisk) {
-            VeloxNative.reloadFromDisk(this)
-        } else {
-            VeloxNative.ensureInitialized(this)
-        }
-        return EngineSnapshot.parse(
+        // v1.7.4: ядро может вернуть null/мусор (сбой JNI, OOM, гонка при перезагрузке данных).
+        // Раньше значение уходило в non-null параметр `parse()` и роняло процесс NPE в фоновой
+        // корутине — ровно «главный экран появился и приложение закрылось».
+        val raw = runCatching {
+            if (reloadDisk) {
+                VeloxNative.reloadFromDisk(this)
+            } else {
+                VeloxNative.ensureInitialized(this)
+            }
             VeloxNative.getStateSnapshotEx(region, settingsState.whitelistMode, false)
-        )
+        }.getOrNull().orEmpty()
+        if (raw.isBlank()) {
+            StartupTrace.mark(this, "snapshot: empty from native")
+            return EngineSnapshot()
+        }
+        return EngineSnapshot.parse(raw)
     }
 
     private fun showSnack(msg: String) {
-        lifecycleScope.launch {
+        launchGuarded(onMain = true) {
             snackbarHost.currentSnackbarData?.dismiss()
             snackbarHost.showSnackbar(msg)
         }

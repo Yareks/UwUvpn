@@ -14,8 +14,8 @@ android {
         // Supports Android 7.0 (API 24) through Android 16, explicitly optimized for Android 12 (API 31/32)
         minSdk = 24
         targetSdk = 35
-        versionCode = 110
-        versionName = "1.7.3"
+        versionCode = 111
+        versionName = "1.7.4"
 
         ndk {
             // Covers 100% of 64-bit and 32-bit ARM Android smartphones while keeping APK compact
@@ -45,8 +45,11 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // v1.7.4: R8/обфускация ОТКЛЮЧЕНЫ. Это исключает целый класс «необъяснимых» крашей
+            // (переименование/удаление классов, поломка сериализации и Compose-плюмбинга при
+            // смене версии R8). Плата — +~8 МБ в APK; надёжность важнее размера.
+            isMinifyEnabled = false
+            isShrinkResources = false
             val relSign = signingConfigs.getByName("release")
             signingConfig = if (relSign.storeFile != null) relSign else signingConfigs.getByName("debug")
             proguardFiles(
