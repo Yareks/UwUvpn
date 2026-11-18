@@ -107,6 +107,9 @@ class VeloxVpnService : XrayVpnService() {
     private var resilientUntilMs: Long = 0L
     @Volatile
     private var lastL1OkAtMs: Long = 0L
+
+    /** v1.7.8: пользователь сам меняет узел — не штрафуем текущий и не ждём «накопления» сбоев. */
+    private var rotatingByUser: Boolean = false
     @Volatile
     private var l1RescueLogAtMs: Long = 0L
 
@@ -167,61 +170,141 @@ class VeloxVpnService : XrayVpnService() {
      * через локальный вход `127.0.0.1:10808`. Успешный CONNECT = ядро диспетчеризует трафик,
      * даже если SNI-фильтр «белого списка» режет последующий TLS к gstatic/example.com.
      */
-    private fun l1TunnelAlive(timeoutMs: Int = 2200): Boolean {
-        val port = VeloxPrefs.LOCAL_VPN_SOCKS_PORT
-        val targets = arrayOf("www.gstatic.com" to 443, "1.1.1.1" to 443, "cp.cloudflare.com" to 443)
-        for ((host, tport) in targets) {
-            val ok = runCatching {
-                java.net.Socket().use { s ->
-                    s.tcpNoDelay = true
-                    s.soTimeout = timeoutMs
-                    s.connect(java.net.InetSocketAddress("127.0.0.1", port), timeoutMs)
-                    val out = s.getOutputStream()
-                    val inp = s.getInputStream()
-
-                    // --- RFC 1928 greeting: VER=5, NMETHODS=2, [NO-AUTH, USER/PASS] ---
-                    out.write(byteArrayOf(0x05, 0x02, 0x00, 0x02))
-                    out.flush()
-                    if (inp.read() != 0x05) return@use false
-                    val method = inp.read()
-                    if (method == 0x02) {
-                        // --- RFC 1929 username/password ---
-                        val u = sessionSocksUser.toByteArray(Charsets.UTF_8)
-                        val p = sessionSocksPass.toByteArray(Charsets.UTF_8)
-                        val auth = ByteArray(3 + u.size + p.size)
-                        auth[0] = 0x01
-                        auth[1] = u.size.toByte()
-                        u.copyInto(auth, 2)
-                        auth[2 + u.size] = p.size.toByte()
-                        p.copyInto(auth, 3 + u.size)
-                        out.write(auth)
-                        out.flush()
-                        if (inp.read() != 0x01 || inp.read() != 0x00) return@use false
-                    } else if (method != 0x00) {
-                        return@use false
-                    }
-
-                    // --- CONNECT domain:port ---
-                    val hb = host.toByteArray(Charsets.UTF_8)
-                    val req = ByteArray(5 + hb.size + 2)
-                    req[0] = 0x05; req[1] = 0x01; req[2] = 0x00; req[3] = 0x03
-                    req[4] = hb.size.toByte()
-                    hb.copyInto(req, 5)
-                    req[5 + hb.size] = ((tport shr 8) and 0xFF).toByte()
-                    req[6 + hb.size] = (tport and 0xFF).toByte()
-                    out.write(req)
-                    out.flush()
-                    if (inp.read() != 0x05) return@use false
-                    // REP = 0x00 (succeeded) — маршрут построен, туннель функционален
-                    inp.read() == 0x00
-                }
-            }.getOrDefault(false)
-            if (ok) {
+    /**
+     * v1.7.8 — ГЛАВНАЯ ПРИЧИНА «0 Кбит/с при зелёном подключении».
+     *
+     * Раньше проба считала туннель живым, как только ядро ПРИНЯЛО SOCKS5 CONNECT. Но узел может
+     * принять CONNECT и молча не передать ни байта (так делают узлы «белых списков» для любых
+     * адресов вне разрешённого SNI). Отсюда: статус CONNECTED, панель показывает 0 Кбит/с,
+     * а через 3-8 с сторож переключает узел на такой же нерабочий — бесконечный цикл.
+     *
+     * Теперь после CONNECT выполняется настоящий HTTPS-запрос (TLS + HTTP GET) и проверяется,
+     * что вернулся HTTP-ответ. Только это доказывает, что трафик реально проходит.
+     */
+    private fun l1TunnelAlive(timeoutMs: Int = 2600): Boolean {
+        // v1.7.8: только честная проверка «байты идут». Проверка «CONNECT принят» удалена:
+        // именно она давала ложное «подключено» при 0 Кбит/с.
+        for ((host, tport) in probeTargets(timeoutMs)) {
+            if (socksProbeThroughTunnel(host, tport, timeoutMs)) {
                 lastL1OkAtMs = System.currentTimeMillis()
                 return true
             }
         }
         return false
+    }
+
+    /**
+     * v1.7.8 — цели для пробы живости выбираются по режиму.
+     *
+     * Узлы «Белых списков РФ» пропускают только SNI из списка Минцифры. Если пробовать
+     * `gstatic`/`cloudflare`, узел формально живой, но 0 байт ответа — отсюда ложные
+     * «переключения» каждые несколько секунд. В режиме БС сначала идём в разрешённые домены.
+     */
+    /**
+     * v1.7.8 — настоящая проверка «трафик проходит», а не «ядро приняло CONNECT».
+     *
+     * Отправляем минимальный TLS ClientHello (chrome-подобный, с X25519) и ждём любой байт
+     * ServerHello. Через узлы «белых списков» TLS к чужому SNI не проходит, поэтому такие
+     * узлы больше не считаются рабочими (и панель не показывает 0 Кбит/с при CONNECTED).
+     */
+    private fun socksProbeThroughTunnel(host: String, port: Int, timeoutMs: Int): Boolean {
+        val socksPort = VeloxPrefs.LOCAL_VPN_SOCKS_PORT
+        return runCatching {
+            java.net.Socket().use { s ->
+                s.tcpNoDelay = true
+                s.soTimeout = timeoutMs
+                s.connect(java.net.InetSocketAddress("127.0.0.1", socksPort), timeoutMs)
+                val out = s.getOutputStream()
+                val inp = s.getInputStream()
+
+                out.write(byteArrayOf(0x05, 0x02, 0x00, 0x02)); out.flush()
+                if (inp.read() != 0x05) return@use false
+                val method = inp.read()
+                if (method == 0x02) {
+                    val u = sessionSocksUser.toByteArray(Charsets.UTF_8)
+                    val p = sessionSocksPass.toByteArray(Charsets.UTF_8)
+                    val auth = ByteArray(3 + u.size + p.size)
+                    auth[0] = 0x01; auth[1] = u.size.toByte()
+                    u.copyInto(auth, 2)
+                    auth[2 + u.size] = p.size.toByte()
+                    p.copyInto(auth, 3 + u.size)
+                    out.write(auth); out.flush()
+                    if (inp.read() != 0x01 || inp.read() != 0x00) return@use false
+                } else if (method != 0x00) return@use false
+
+                val hb = host.toByteArray(Charsets.UTF_8)
+                val req = ByteArray(5 + hb.size + 2)
+                req[0] = 0x05; req[1] = 0x01; req[2] = 0x00; req[3] = 0x03
+                req[4] = hb.size.toByte()
+                hb.copyInto(req, 5)
+                req[5 + hb.size] = ((port shr 8) and 0xFF).toByte()
+                req[6 + hb.size] = (port and 0xFF).toByte()
+                out.write(req); out.flush()
+                if (inp.read() != 0x05 || inp.read() != 0x00) return@use false
+
+                // Минимальный TLS 1.3 ClientHello (SNI=host, X25519+MLKEM ключи)
+                out.write(buildTlsClientHello(host)); out.flush()
+                val first = inp.read()
+                first > 0
+            }
+        }.getOrDefault(false)
+    }
+
+    /** Собирает минимальный TLS ClientHello с SNI. Только размеры и ключи — без секретов. */
+    private fun buildTlsClientHello(host: String): ByteArray {
+        val sni = host.toByteArray(Charsets.US_ASCII)
+        fun ext(t: Int, body: ByteArray): ByteArray =
+            byteArrayOf((t shr 8).toByte(), t.toByte(), (body.size shr 8).toByte(), body.size.toByte()) + body
+
+        val sniBody = byteArrayOf(((sni.size + 3) shr 8).toByte(), ((sni.size + 3) and 0xFF).toByte(), 0x00) +
+            byteArrayOf((sni.size shr 8).toByte(), sni.size.toByte()) + sni
+        // X25519 (0x001d) + x25519mlkem768 (0x11ec) — как у chrome; без них новое ядро/сервер рвёт рукопожатие
+        val groups = byteArrayOf(0x00, 0x04, 0x00, 0x1d, 0x11, 0xec.toByte())
+        val sigAlgs = byteArrayOf(
+            0x00, 0x08, 0x04, 0x03, 0x08, 0x04, 0x04, 0x01, 0x05, 0x03.toByte()
+        )
+        val version = byteArrayOf(0x04.toByte(), 0x03, 0x04) // TLS 1.3
+        val keyShareBody = byteArrayOf(0x00, 0x24, 0x00, 0x1d, 0x00, 0x20) + ByteArray(32) { 0x2a }
+        val extensions = ext(0x0000, sniBody) +
+            ext(0x000a, groups) +
+            ext(0x000d, sigAlgs) +
+            ext(0x002b, version) +
+            ext(0x0033, keyShareBody)
+
+        val cipherSuites = byteArrayOf(
+            0x13, 0x01, 0x13, 0x02, 0x13, 0x03
+        )
+        val body = byteArrayOf(0x03, 0x03) + ByteArray(32) { 0x11 } + // legacy_version + random
+            byteArrayOf(0x00) + // empty session id
+            byteArrayOf((cipherSuites.size shr 8).toByte(), cipherSuites.size.toByte()) + cipherSuites +
+            byteArrayOf(0x01, 0x00) + // 1 compression: null
+            byteArrayOf((extensions.size shr 8).toByte(), (extensions.size and 0xFF).toByte()) + extensions
+
+        val handshake = byteArrayOf(
+            0x01,
+            (body.size shr 16).toByte(), (body.size shr 8).toByte(), body.size.toByte()
+        ) + body
+        return byteArrayOf(0x16, 0x03, 0x01, (handshake.size shr 8).toByte(), (handshake.size and 0xFF).toByte()) + handshake
+    }
+
+    private fun probeTargets(timeoutMs: Int): Array<Pair<String, Int>> {
+        val wl = runCatching { VeloxPrefs.loadSettings(this).whitelistMode }.getOrDefault(false)
+        return if (wl) {
+            arrayOf(
+                "yandex.ru" to 443,
+                "vk.com" to 443,
+                "mail.ru" to 443,
+                "www.gstatic.com" to 443,
+                "1.1.1.1" to 443,
+            )
+        } else {
+            arrayOf(
+                "www.gstatic.com" to 443,
+                "1.1.1.1" to 443,
+                "cp.cloudflare.com" to 443,
+                "yandex.ru" to 443,
+            )
+        }
     }
 
     private var networkChangeJob: Job? = null
@@ -508,7 +591,7 @@ class VeloxVpnService : XrayVpnService() {
                 VeloxNative.logInfo(
                     this@VeloxVpnService,
                     "VPN",
-                    "=== Старт v1.7.7: $regionLabel | 2×Резерв=${if (settings.dualChannel) "ВКЛ" else "выкл"} | " +
+                    "=== Старт v1.7.8: $regionLabel | 2×Резерв=${if (settings.dualChannel) "ВКЛ" else "выкл"} | " +
                         "БС=${if (settings.whitelistMode) "ВКЛ" else "выкл"} | YT0%=${if (settings.adblockYoutube) "ВКЛ" else "выкл"} | " +
                         "Фрагм=${if (settings.fragmentTls) "ВКЛ" else "выкл"} | $netDesc ==="
                 )
@@ -616,7 +699,10 @@ class VeloxVpnService : XrayVpnService() {
 
                 // Step 3: Establish Android TUN tunnel (atomic replace if already running -> zero drop!)
                 var attempt = 0
-                val maxTunAttempts = 4
+                // v1.7.8: 4 узла было мало — из 14 живых первые могут быть «пропускающими
+                // только белые списки». С 6 попытками при 25-с таймауте на попытку шанс
+                // исчерпать пул и остаться без соединения кратно ниже.
+                val maxTunAttempts = 6
                 var lastTunError = ""
 
                 while (attempt < maxTunAttempts && !isAborted()) {
@@ -782,9 +868,17 @@ class VeloxVpnService : XrayVpnService() {
         val startupProbe = if (freshlyVerified || viaWarp || preserveSinceMs > 0L) {
             null
         } else {
+            // v1.7.8: в режиме «Белые списки РФ» узел пропускает ТОЛЬКО разрешённые домены —
+            // проверка по cp.cloudflare.com давала ложный «startup probe timed out» и узел
+            // выбрасывался как нерабочий. Проверяем домен, который узел точно пропускает.
+            val probeUrl = if (settings.whitelistMode) {
+                "https://yandex.ru/generate_204"
+            } else {
+                "https://cp.cloudflare.com/generate_204"
+            }
             XrayStartupProbeOptions(
                 // HTTPS :443 only — HTTP :80 is dropped by many exits/DPI and caused false fails
-                "https://cp.cloudflare.com/generate_204",
+                probeUrl,
                 5000L,
                 firstTag,
             )
@@ -831,9 +925,13 @@ class VeloxVpnService : XrayVpnService() {
             pendingStartResult.compareAndSet(waiter, null)
             Result.failure(invoked.exceptionOrNull() ?: IllegalStateException("startXrayTunnel failed"))
         } else {
-            withTimeoutOrNull(15_000L) { waiter.await() } ?: run {
+            // v1.7.8: 15 с не хватало. На LTE узел поднимается 200-800 мс, но встроенная
+            // startup-проба (TLS до 5 с) плюс первый DNS/GeoIP могут съесть весь бюджет,
+            // особенно на перегруженном узле БС. Даём 25 с и отдельно сообщаем о таймауте,
+            // чтобы узел не выбрасывался из пула «навсегда» из-за медленного старта.
+            withTimeoutOrNull(25_000L) { waiter.await() } ?: run {
                 pendingStartResult.compareAndSet(waiter, null)
-                Result.failure(IllegalStateException("Таймаут запуска TUN (15с)"))
+                Result.failure(IllegalStateException("Таймаут запуска TUN (25с)"))
             }
         }
 
@@ -960,7 +1058,9 @@ class VeloxVpnService : XrayVpnService() {
             )
 
             var needsReplenish = false
-            if (badId.isNotBlank()) {
+            // v1.7.8: при ручной смене узла НЕ помечаем узел сбойным — он рабочий, пользователь
+            // просто выбрал другой. Иначе пул вымирает за 3–4 ротации.
+            if (badId.isNotBlank() && !rotatingByUser) {
                 val rep = runCatching {
                     JSONObject(VeloxNative.reportNodeFailure(badId, settings.region, reason))
                 }.getOrDefault(JSONObject())
@@ -1247,7 +1347,15 @@ class VeloxVpnService : XrayVpnService() {
     private fun rotateActiveNode() {
         if (currentState.phase == VpnPhase.CONNECTED) {
             scope.launch {
-                promoteHotStandbySeamlessly(reason = "ручная смена узла")
+                // v1.7.8: при ЯВНОЙ смене узла текущий узел не должен получать «сбой #N».
+                // Раньше ротация помечала рабочий узел сбойным (в журнале «сбой #3 — ручная
+                // смена узла»), пул редел, и после 3-4 ротаций подключаться становилось некуда.
+                rotatingByUser = true
+                try {
+                    promoteHotStandbySeamlessly(reason = "ручная смена узла")
+                } finally {
+                    rotatingByUser = false
+                }
             }
             return
         }
